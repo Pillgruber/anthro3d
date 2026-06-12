@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ANTHRO3D — Patienten</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f4f6f4; --surface:#ffffff; --border:#dde8dd;
+  --g1:#2a5a3a; --g2:#3d7a52; --g3:#5a9a6a; --g4:#b8d8c0; --g5:#eaf4ec;
+  --text:#1a2e1f; --dim:#5a7a60; --muted:#9ab8a0; --faint:#f0f5f0;
+  --red:#b84040; --amber:#b87820;
+  --r:10px; --shadow:0 2px 16px rgba(42,90,58,0.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;}
+
+/* ── HEADER ── */
+header{background:var(--surface);border-bottom:2px solid var(--g4);padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:200;box-shadow:var(--shadow);}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--g1);letter-spacing:0.08em;}
+.logo span{color:var(--g3);font-weight:600;}
+.header-right{margin-left:auto;display:flex;gap:10px;align-items:center;}
+.btn{padding:8px 18px;border-radius:var(--r);font-family:'DM Mono',monospace;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;border:none;}
+.btn-primary{background:var(--g1);color:#fff;}
+.btn-primary:hover{background:var(--g2);}
+.btn-ghost{background:transparent;color:var(--dim);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--g2);color:var(--g1);}
+.pat-count{font-size:11px;color:var(--muted);padding:4px 12px;border-radius:20px;background:var(--g5);border:1px solid var(--g4);}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-columns:340px 1fr;height:calc(100vh - 60px);}
+
+/* ── LEFT: Patientenliste ── */
+.list-pane{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden;}
+.search-wrap{padding:16px;border-bottom:1px solid var(--border);position:relative;}
+.search-input{width:100%;padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:var(--r);font-family:'DM Mono',monospace;font-size:12px;background:var(--faint);color:var(--text);outline:none;transition:all 0.15s;}
+.search-input:focus{border-color:var(--g2);background:#fff;box-shadow:0 0 0 3px rgba(61,122,82,0.1);}
+.search-icon{position:absolute;left:28px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;}
+.list-scroll{flex:1;overflow-y:auto;padding:8px;}
+.pat-item{padding:12px 14px;border-radius:8px;cursor:pointer;transition:all 0.12s;border:1px solid transparent;margin-bottom:3px;}
+.pat-item:hover{background:var(--g5);border-color:var(--g4);}
+.pat-item.active{background:var(--g5);border-color:var(--g2);}
+.pat-name{font-weight:500;color:var(--text);font-size:13px;margin-bottom:2px;}
+.pat-meta{font-size:10px;color:var(--muted);display:flex;gap:8px;}
+.pat-id{font-size:9px;color:var(--g3);font-weight:500;}
+.pat-sessions-badge{font-size:9px;padding:1px 7px;border-radius:10px;background:var(--g5);border:1px solid var(--g4);color:var(--g2);}
+.no-patients{text-align:center;padding:40px 20px;color:var(--muted);}
+.no-patients-icon{font-size:36px;margin-bottom:10px;opacity:0.4;}
+
+/* ── RIGHT: Detail / Formular ── */
+.detail-pane{overflow-y:auto;padding:32px;}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--muted);}
+.empty-icon{font-size:64px;margin-bottom:16px;opacity:0.25;}
+.empty-title{font-family:'Syne',sans-serif;font-size:20px;color:var(--dim);margin-bottom:8px;}
+.empty-sub{font-size:11px;line-height:1.8;}
+
+/* ── FORMULAR ── */
+.form-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:680px;box-shadow:var(--shadow);}
+.form-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--g1);margin-bottom:4px;}
+.form-subtitle{font-size:11px;color:var(--muted);margin-bottom:24px;}
+.form-section{margin-bottom:20px;}
+.form-section-title{font-size:9px;color:var(--g2);text-transform:uppercase;letter-spacing:0.15em;font-weight:500;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.form-grid.three{grid-template-columns:2fr 1fr 1fr;}
+.form-group{display:flex;flex-direction:column;gap:5px;}
+.form-group.full{grid-column:1/-1;}
+label{font-size:10px;color:var(--dim);font-weight:500;letter-spacing:0.05em;}
+label span{color:var(--red);margin-left:2px;}
+input,textarea,select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);background:var(--faint);outline:none;transition:all 0.15s;width:100%;}
+input:focus,textarea:focus,select:focus{border-color:var(--g2);background:#fff;box-shadow:0 0 0 3px rgba(61,122,82,0.1);}
+input.error{border-color:var(--red);}
+textarea{resize:vertical;min-height:70px;}
+.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);}
+.pat-id-badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--g2);background:var(--g5);border:1px solid var(--g4);border-radius:6px;padding:4px 10px;margin-bottom:16px;}
+
+/* ── SESSIONS LIST ── */
+.sessions-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:680px;margin-top:20px;box-shadow:var(--shadow);}
+.sessions-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.session-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer;transition:all 0.12s;}
+.session-item:hover{border-color:var(--g3);background:var(--g5);}
+.session-dot{width:8px;height:8px;border-radius:50%;background:var(--g3);flex-shrink:0;}
+.session-dot.stereo{background:var(--g1);}
+.session-info{flex:1;}
+.session-date{font-size:12px;font-weight:500;color:var(--text);}
+.session-meta{font-size:10px;color:var(--muted);margin-top:1px;}
+.session-badge{font-size:9px;padding:2px 8px;border-radius:10px;background:var(--g5);border:1px solid var(--g4);color:var(--g2);}
+.session-badge.stereo{background:#eef4ff;border-color:#b0c8e8;color:#3060a0;}
+.no-sessions{text-align:center;padding:20px;color:var(--muted);font-size:11px;}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:10px;font-size:12px;font-weight:500;z-index:1000;transform:translateY(80px);opacity:0;transition:all 0.3s;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{background:var(--g1);color:#fff;}
+.toast.err{background:var(--red);color:#fff;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ANTHRO<span>3D</span></div>
+  <div style="font-size:11px;color:var(--muted);">Patientenverwaltung</div>
+  <div class="header-right">
+    <div class="pat-count"><span id="patCount">0</span> Patienten</div>
+    <button class="btn btn-primary" onclick="newPatient()">＋ Neuer Patient</button>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- LINKS: Patientenliste -->
+  <div class="list-pane">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="searchInput" type="text"
+        placeholder="Name oder ID suchen..."
+        oninput="searchPatients(this.value)"
+        autocomplete="off">
+    </div>
+    <div class="list-scroll" id="patList">
+      <div class="no-patients">
+        <div class="no-patients-icon">👤</div>
+        <div>Noch keine Patienten</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECHTS: Detail -->
+  <div class="detail-pane" id="detailPane">
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">Patient auswählen</div>
+      <div class="empty-sub">
+        Patient aus der Liste wählen<br>oder neuen Patienten anlegen.<br><br>
+        <button class="btn btn-primary" onclick="newPatient()">＋ Neuer Patient anlegen</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:8765/api';
+let patients = [], currentId = null, editMode = false;
+
+// ── LADEN ─────────────────────────────────────────────────────────────────────
+async function loadPatients(q='') {
+  try {
+    const url = q ? `${API}/patients?q=${encodeURIComponent(q)}` : `${API}/patients`;
+    const res  = await fetch(url);
+    patients   = await res.json();
+    renderList(patients);
+    document.getElementById('patCount').textContent = q ? patients.length : patients.length;
+  } catch(e) {
+    console.error('Server nicht erreichbar:', e);
+  }
+}
+
+function searchPatients(q) {
+  clearTimeout(window._st);
+  window._st = setTimeout(() => loadPatients(q), 180);
+}
+
+function renderList(list) {
+  const el = document.getElementById('patList');
+  if (!list.length) {
+    el.innerHTML = `<div class="no-patients"><div class="no-patients-icon">🔍</div><div>Keine Patienten gefunden</div></div>`;
+    return;
+  }
+  el.innerHTML = list.map(p => `
+    <div class="pat-item ${p.id===currentId?'active':''}" onclick="selectPatient('${p.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+        <div class="pat-name">${p.nachname} ${p.vorname}</div>
+        <div class="pat-id">${p.id}</div>
+      </div>
+      <div class="pat-meta">
+        <span>${p.geburtsdatum ? '🎂 ' + formatDate(p.geburtsdatum) : ''}</span>
+        <span>${p.ort ? '📍 ' + p.ort : ''}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── PATIENT AUSWÄHLEN ─────────────────────────────────────────────────────────
+async function selectPatient(id) {
+  currentId = id;
+  editMode  = false;
+  renderList(patients);
+  try {
+    const res = await fetch(`${API}/patients/${id}`);
+    const pat = await res.json();
+    showDetail(pat);
+  } catch(e) { toast('Fehler beim Laden', 'err'); }
+}
+
+function showDetail(pat) {
+  const dp = document.getElementById('detailPane');
+  const sessions = pat.sessions || [];
+  dp.innerHTML = `
+    <div class="form-card">
+      <div class="pat-id-badge">🆔 ${pat.id} · erstellt ${formatDate(pat.erstellt_am)}</div>
+      <div class="form-title">${pat.nachname} ${pat.vorname}</div>
+      <div class="form-subtitle">${pat.geburtsdatum ? '🎂 ' + formatDate(pat.geburtsdatum) : '—'} &nbsp;·&nbsp; ${pat.ort||'—'}</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0 16px;">
+        ${field('Vorname',      pat.vorname)}
+        ${field('Nachname',     pat.nachname)}
+        ${field('Geburtsdatum', formatDate(pat.geburtsdatum))}
+        ${field('Straße',       pat.strasse)}
+        ${field('PLZ',          pat.plz)}
+        ${field('Ort',          pat.ort)}
+        ${field('Land',         pat.land)}
+        ${field('Telefon',      pat.telefon)}
+        ${field('E-Mail',       pat.email)}
+      </div>
+      ${pat.notizen ? `<div style="padding:10px 12px;background:var(--g5);border:1px solid var(--g4);border-radius:8px;font-size:11px;color:var(--dim);margin-bottom:16px;"><strong>Notizen:</strong> ${pat.notizen}</div>` : ''}
+
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="newSession('${pat.id}')">📹 Neue Aufnahme</button>
+        <button class="btn btn-primary" onclick="editPatient('${pat.id}')">✏️ Bearbeiten</button>
+      </div>
+    </div>
+
+    ${sessions.length ? `
+    <div class="sessions-card">
+      <div class="sessions-title">📹 Aufnahmen <span style="font-size:11px;font-weight:400;color:var(--muted)">(${sessions.length})</span></div>
+      ${sessions.map(s => `
+        <div class="session-item">
+          <div class="session-dot ${s.has_stereo?'stereo':''}"></div>
+          <div class="session-info">
+            <div class="session-date">${formatDate(s.aufnahme_at)} ${formatTime(s.aufnahme_at)}</div>
+            <div class="session-meta">${s.frames||0} Frames · ${s.dauer_s||0}s · ${s.fps||10}fps</div>
+          </div>
+          <div class="session-badge ${s.has_stereo?'stereo':''}">${s.has_stereo?'Stereo 3D':'2D'}</div>
+        </div>
+      `).join('')}
+    </div>` : `
+    <div class="sessions-card">
+      <div class="sessions-title">📹 Aufnahmen</div>
+      <div class="no-sessions">Noch keine Aufnahmen für diesen Patienten.</div>
+    </div>`}
+  `;
+}
+
+function field(label, value) {
+  return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+    <div style="font-size:9px;color:var(--muted);margin-bottom:2px;">${label}</div>
+    <div style="font-size:12px;color:${value?'var(--text)':'var(--muted)'};">${value||'—'}</div>
+  </div>`;
+}
+
+// ── NEUER PATIENT ─────────────────────────────────────────────────────────────
+function newPatient() {
+  currentId = null; editMode = true;
+  renderList(patients);
+  showForm(null);
+}
+
+async function editPatient(id) {
+  editMode = true;
+  try {
+    const res = await fetch(`${API}/patients/${id}`);
+    const pat = await res.json();
+    showForm(pat);
+  } catch(e) { toast('Fehler beim Laden', 'err'); }
+}
+
+function showForm(pat) {
+  const dp  = document.getElementById('detailPane');
+  const isNew = !pat;
+  dp.innerHTML = `
+    <div class="form-card">
+      ${pat ? `<div class="pat-id-badge">🆔 ${pat.id}</div>` : ''}
+      <div class="form-title">${isNew ? '＋ Neuer Patient' : 'Patient bearbeiten'}</div>
+      <div class="form-subtitle">${isNew ? 'Pflichtfelder mit * markiert' : pat.id + ' · ' + formatDate(pat?.erstellt_am)}</div>
+
+      <div class="form-section">
+        <div class="form-section-title">Persönliche Daten</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Vorname <span>*</span></label>
+            <input id="f-vorname" type="text" value="${pat?.vorname||''}" placeholder="Vorname" autocomplete="given-name">
+          </div>
+          <div class="form-group">
+            <label>Nachname <span>*</span></label>
+            <input id="f-nachname" type="text" value="${pat?.nachname||''}" placeholder="Nachname" autocomplete="family-name">
+          </div>
+          <div class="form-group">
+            <label>Geburtsdatum</label>
+            <input id="f-geburtsdatum" type="date" value="${pat?.geburtsdatum||''}">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Adresse</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Straße & Hausnummer</label>
+            <input id="f-strasse" type="text" value="${pat?.strasse||''}" placeholder="Musterstraße 1" autocomplete="street-address">
+          </div>
+          <div class="form-group">
+            <label>PLZ</label>
+            <input id="f-plz" type="text" value="${pat?.plz||''}" placeholder="1010" autocomplete="postal-code">
+          </div>
+          <div class="form-group">
+            <label>Ort</label>
+            <input id="f-ort" type="text" value="${pat?.ort||''}" placeholder="Wien" autocomplete="address-level2">
+          </div>
+          <div class="form-group">
+            <label>Land</label>
+            <select id="f-land">
+              ${['Österreich','Deutschland','Schweiz','Liechtenstein','Sonstige'].map(l =>
+                `<option ${(pat?.land||'Österreich')===l?'selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Kontakt</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Telefon</label>
+            <input id="f-telefon" type="tel" value="${pat?.telefon||''}" placeholder="+43 123 456789" autocomplete="tel">
+          </div>
+          <div class="form-group">
+            <label>E-Mail</label>
+            <input id="f-email" type="email" value="${pat?.email||''}" placeholder="name@beispiel.at" autocomplete="email">
+          </div>
+          <div class="form-group full">
+            <label>Notizen</label>
+            <textarea id="f-notizen" placeholder="Diagnose, Besonderheiten, Anmerkungen...">${pat?.notizen||''}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="${pat ? `selectPatient('${pat.id}')` : 'showEmpty()'}">Abbrechen</button>
+        <button class="btn btn-primary" onclick="savePatient('${pat?.id||''}')">
+          ${isNew ? '✓ Patient anlegen' : '✓ Änderungen speichern'}
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Fokus auf erstes Feld
+  setTimeout(() => document.getElementById('f-vorname')?.focus(), 100);
+
+  // Enter = speichern
+  dp.querySelectorAll('input').forEach(el =>
+    el.addEventListener('keydown', e => { if(e.key==='Enter') savePatient(pat?.id||''); }));
+}
+
+async function savePatient(id) {
+  const vn = document.getElementById('f-vorname')?.value?.trim();
+  const nn = document.getElementById('f-nachname')?.value?.trim();
+  if (!vn || !nn) {
+    document.getElementById('f-vorname').classList.toggle('error', !vn);
+    document.getElementById('f-nachname').classList.toggle('error', !nn);
+    toast('Bitte Vor- und Nachname eingeben', 'err');
+    return;
+  }
+
+  const data = {
+    vorname:      vn,
+    nachname:     nn,
+    geburtsdatum: document.getElementById('f-geburtsdatum')?.value || '',
+    strasse:      document.getElementById('f-strasse')?.value || '',
+    plz:          document.getElementById('f-plz')?.value || '',
+    ort:          document.getElementById('f-ort')?.value || '',
+    land:         document.getElementById('f-land')?.value || 'Österreich',
+    telefon:      document.getElementById('f-telefon')?.value || '',
+    email:        document.getElementById('f-email')?.value || '',
+    notizen:      document.getElementById('f-notizen')?.value || '',
+  };
+
+  try {
+    const method = id ? 'PUT' : 'POST';
+    const url    = id ? `${API}/patients/${id}` : `${API}/patients`;
+    const res    = await fetch(url, {
+      method, headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const pat = await res.json();
+    currentId = pat.id;
+    await loadPatients();
+    showDetail(pat);
+    toast(id ? 'Gespeichert ✓' : `Patient ${pat.id} angelegt ✓`, 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
+}
+
+function newSession(patientId) {
+  toast(`Aufnahme für ${patientId} — starte session_recorder.py`, 'ok');
+}
+
+function showEmpty() {
+  currentId = null;
+  renderList(patients);
+  document.getElementById('detailPane').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">Patient auswählen</div>
+      <div class="empty-sub">Patient aus der Liste wählen<br>oder neuen Patienten anlegen.<br><br>
+        <button class="btn btn-primary" onclick="newPatient()">＋ Neuer Patient anlegen</button>
+      </div>
+    </div>`;
+}
+
+// ── HILFSFUNKTIONEN ───────────────────────────────────────────────────────────
+function formatDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleDateString('de-AT');
+}
+function formatTime(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString('de-AT', {hour:'2-digit',minute:'2-digit'});
+}
+
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast ${type} show`;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadPatients();
+// Alle 30s neu laden
+setInterval(() => loadPatients(document.getElementById('searchInput').value), 30000);
+</script>
+</body>
+</html>

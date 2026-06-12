@@ -1,0 +1,99 @@
+version: 2
+setup:
+  name: Standard 3-Stativ
+  stative: 3
+  erweiterbar: true
+systems:
+  ELP1:
+    enabled: true
+    type: elp
+    position: front
+    aruco_id: 3
+    connection: direct_usb
+    device_index: auto
+    color: true
+    fps: 60
+    resolution:
+    - 1600
+    - 1200
+    baseline_mm: 60
+    priority: 1
+  ELP2:
+    enabled: true
+    type: elp
+    position: back
+    aruco_id: 10
+    connection: direct_usb
+    device_index: auto
+    color: true
+    fps: 60
+    resolution:
+    - 1600
+    - 1200
+    baseline_mm: 60
+    priority: 2
+  OV1:
+    enabled: true
+    type: ov9281_pair
+    position: left
+    aruco_id: 2
+    connection: hub
+    device_index_l: auto
+    device_index_r: auto
+    color: false
+    fps: 60
+    resolution:
+    - 1280
+    - 720
+    baseline_mm: 80
+    priority: 3
+  OV2:
+    enabled: false
+    type: ov9281_pair
+    position: right
+    aruco_id: 2
+    connection: hub
+    device_index_l: auto
+    device_index_r: auto
+    color: false
+    fps: 60
+    resolution:
+    - 1280
+    - 720
+    baseline_mm: 80
+    priority: 4
+  ELP3:
+    enabled: false
+    type: elp
+    position: left_front
+    aruco_id: 4
+    connection: hub
+    device_index: auto
+    color: true
+    fps: 60
+    resolution:
+    - 1600
+    - 1200
+    baseline_mm: 60
+    priority: 5
+aruco:
+  dict: DICT_ARUCO_ORIGINAL
+  marker_size_m: 0.19
+  ids:
+    ELP1: 3
+    ELP2: 10
+    OV1: 2
+    OV2: 2
+    ELP3: 4
+    patient: 16
+calibration:
+  ema_alpha: 0.3
+  marker_size_cm: 19.0
+  stability_frames: 30
+  auto_recalib: true
+usb:
+  port_1: ELP1
+  port_2: ELP2
+  port_3:
+  - OV1
+  - OV2

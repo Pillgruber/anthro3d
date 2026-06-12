@@ -1,0 +1,39 @@
+f=30 rec=NO en=True
+f=60 rec=NO en=True
+f=90 rec=NO en=True
+OpenCV: out device of bound (0-4): 5
+OpenCV: camera failed to properly initialize!
+[ WARN:1@10,228] global cap_ffmpeg_impl.hpp:1217 open VIDEOIO/FFMPEG: Failed list devices for backend avfoundation
+OpenCV: out device of bound (0-4): 6
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 7
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 8
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 9
+OpenCV: camera failed to properly initialize!
+  Entzerrung geladen ✓
+=============================
+Start: Fr. 12 Juni 2026 21:42:54 CEST
+=============================
+qt.qpa.fonts: Populating font family aliases took 70 ms. Replace uses of missing font family "Sans-serif" with one that exists to avoid this cost. 
+I0000 00:00:1781293375.868860  877312 init-domain.cc:128] Fiber init: default domain = pthread, concurrency = 11, prefix = pthread-default
+I0000 00:00:1781293375.896316  877312 gl_context.cc:407] GL version: 2.1 (2.1 Metal - 90.5), renderer: Apple M1 Pro
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1781293375.942554  877316 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1781293375.952558  877316 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+OpenCV: out device of bound (0-4): 5
+OpenCV: camera failed to properly initialize!
+[ WARN:1@8,676] global cap_ffmpeg_impl.hpp:1217 open VIDEOIO/FFMPEG: Failed list devices for backend avfoundation
+OpenCV: out device of bound (0-4): 6
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 7
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 8
+OpenCV: camera failed to properly initialize!
+OpenCV: out device of bound (0-4): 9
+OpenCV: camera failed to properly initialize!
+E0000 00:00:1781293887.650319  877313 portable_clearcut_uploader.cc:90] Failed to send to clearcut: FAILED_PRECONDITION: Not valid for uploading until: 2026-06-12T21:58:56.207331+02:00
+=== Source Location Trace: === 
+wireless/android/play/playlog/cplusplus/portable_clearcut_uploader.cc:180
+  Entzerrung geladen ✓

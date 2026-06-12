@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>ANTHRO3D Setup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f0f4f1;--surface:#fff;--border:#d4e0d6;--g1:#3d6b50;--g2:#5a8a6a;--g4:#c2dbc8;--g5:#e8f3ea;--text:#1a2e20;--text2:#3d5a44;--dim:#7a9880;--muted:#b0c8b4;--warn:#b87030;--r:8px;--ind:#5c4a8a;--ind2:#7c6aaa;--ind5:#ede8f8;--ind4:#c4b8e8;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;font-size:13px;}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:12px;}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--g1);letter-spacing:0.1em;}
+.logo-sub{font-size:10px;color:var(--dim);letter-spacing:0.15em;text-transform:uppercase;}
+.steps{display:flex;align-items:center;padding:0 24px;height:48px;gap:0;margin-left:auto;border-bottom:1px solid var(--border);background:var(--surface);}
+.step{display:flex;align-items:center;gap:8px;padding:0 14px;font-size:11px;color:var(--dim);}
+.step.active{color:var(--g1);font-weight:500;}.step.done{color:var(--g2);}
+.step-num{width:22px;height:22px;border-radius:50%;border:1px solid var(--muted);display:flex;align-items:center;justify-content:center;font-size:10px;}
+.step.active .step-num{border-color:var(--g1);background:var(--g5);color:var(--g1);}
+.step.done .step-num{border-color:var(--g2);background:var(--g5);color:var(--g2);}
+.sep{width:30px;height:1px;background:var(--border);}
+.main{flex:1;display:flex;align-items:center;justify-content:center;padding:20px 24px;overflow:auto;}
+.step-content{display:none;width:100%;max-width:980px;}.step-content.active{display:block;}
+.step-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px;}
+.step-desc{font-size:12px;color:var(--dim);margin-bottom:20px;}
+
+/* CONFIG GRID — 2 cards top row, Individual full width below */
+.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.config-card{background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:all 0.2s;position:relative;}
+.config-card:hover{border-color:var(--g2);transform:translateY(-1px);box-shadow:0 4px 16px rgba(61,107,80,0.08);}
+.config-card.selected{border-color:var(--g1);background:var(--g5);}
+.config-card.ind-card{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+.config-card.ind-card.selected{border-color:var(--ind);background:var(--ind5);}
+.config-card.ind-card:hover{border-color:var(--ind2);transform:none;box-shadow:none;}
+.config-name{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:var(--g1);margin-bottom:2px;display:flex;align-items:center;gap:8px;}
+.config-name.sn{color:#4a6aa8;}.config-name.in{color:var(--ind);}
+.config-sub{font-size:11px;color:var(--dim);margin-bottom:14px;}
+.spec{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px;}
+.spec:last-child{border:none;}
+.spec-label{color:var(--dim);}.spec-val{font-weight:500;color:var(--text);}
+.cfg-badge{font-size:9px;padding:2px 8px;border-radius:20px;font-weight:500;}
+.bc{background:rgba(61,107,80,0.1);color:var(--g1);border:1px solid rgba(61,107,80,0.2);}
+.bp{background:rgba(61,107,80,0.15);color:var(--g1);border:1px solid rgba(61,107,80,0.3);}
+.bs{background:rgba(74,106,168,0.1);color:#4a6aa8;border:1px solid rgba(74,106,168,0.2);}
+.bi{background:rgba(92,74,138,0.1);color:var(--ind);border:1px solid rgba(92,74,138,0.2);}
+.chip-wrap{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;}
+.chip{font-size:9px;padding:2px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--border);color:var(--dim);}
+.chip.gs{background:rgba(74,106,168,0.08);border-color:rgba(74,106,168,0.25);color:#4a6aa8;}
+.chip.ga{background:rgba(61,107,80,0.08);border-color:rgba(61,107,80,0.25);color:var(--g1);}
+.chip.gi{background:rgba(92,74,138,0.08);border-color:rgba(92,74,138,0.25);color:var(--ind);}
+
+/* INDIVIDUAL CONTROLS */
+.ind-col{display:flex;flex-direction:column;gap:10px;}
+.ind-row{display:flex;align-items:center;gap:10px;}
+.ind-lbl{font-size:11px;color:var(--dim);flex:1;}
+.ind-v{font-size:13px;font-weight:600;color:var(--ind);min-width:28px;text-align:center;}
+.ind-btn{width:28px;height:28px;border-radius:50%;border:1px solid var(--ind4);background:var(--ind5);color:var(--ind);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;}
+.ind-btn:hover{background:var(--ind4);}
+.room-input{width:70px;padding:5px 8px;border:1px solid var(--ind4);border-radius:6px;font-size:13px;font-weight:600;color:var(--ind);background:var(--ind5);text-align:center;font-family:'Inter',sans-serif;}
+.room-input:focus{outline:none;border-color:var(--ind);box-shadow:0 0 0 2px rgba(92,74,138,0.15);}
+.st-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(92,74,138,0.06);border:1px solid var(--ind4);border-radius:6px;cursor:pointer;}
+.st-row input{accent-color:var(--ind);width:14px;height:14px;}
+.st-lbl{font-size:11px;color:var(--text2);flex:1;}
+.st-sub{font-size:9px;color:var(--dim);}
+.bl-row{display:flex;align-items:center;gap:10px;margin-top:2px;}
+.bl-input{width:60px;padding:4px 8px;border:1px solid var(--ind4);border-radius:6px;font-size:11px;color:var(--ind);font-weight:600;background:var(--ind5);text-align:center;}
+.bl-input:focus{outline:none;border-color:var(--ind);}
+.ind-sumbox{padding:8px 10px;background:rgba(92,74,138,0.06);border:1px solid var(--ind4);border-radius:6px;font-size:10px;color:var(--ind);}
+.ind-sumbox-t{font-weight:600;margin-bottom:3px;}
+.ind-sumbox-s{color:var(--dim);}
+
+/* STEP 2 */
+.pl-layout{display:grid;grid-template-columns:1fr 300px;gap:16px;}
+.cv-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;padding:16px;}
+.sp{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:520px;}
+.cc{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;transition:all 0.3s;}
+.cc.ok{border-color:rgba(90,138,106,0.5);background:var(--g5);}
+.cc.warn{border-color:rgba(184,112,48,0.4);background:#fdf3ea;}
+.cc.st{border-color:rgba(74,106,168,0.3);background:#f0f3fa;}
+.ch{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.cd{width:9px;height:9px;border-radius:50%;background:var(--muted);transition:all 0.3s;flex-shrink:0;}
+.cd.ok{background:var(--g2);box-shadow:0 0 5px var(--g2);}
+.cd.warn{background:var(--warn);box-shadow:0 0 5px var(--warn);}
+.cd.st{background:#4a6aa8;box-shadow:0 0 5px #4a6aa8;}
+.cn{font-size:11px;font-weight:500;color:var(--text);}
+.cdet{font-size:10px;color:var(--dim);}
+.cdist{display:inline-flex;align-items:center;gap:4px;margin-top:3px;font-size:10px;padding:1px 7px;border-radius:20px;background:rgba(184,112,48,0.1);color:var(--warn);border:1px solid rgba(184,112,48,0.2);transition:all 0.3s;}
+.cdist.close{background:rgba(90,138,106,0.1);color:var(--g2);border-color:rgba(90,138,106,0.2);}
+.cdist.hidden{display:none;}
+.abadge{font-size:9px;padding:1px 6px;border-radius:10px;background:rgba(160,72,72,0.1);color:#a04848;border:1px solid rgba(160,72,72,0.2);margin-left:auto;white-space:nowrap;}
+.sbadge{font-size:9px;padding:1px 6px;border-radius:10px;background:rgba(74,106,168,0.1);color:#4a6aa8;border:1px solid rgba(74,106,168,0.2);margin-left:auto;white-space:nowrap;}
+.instr{background:var(--g5);border:1px solid var(--g4);border-radius:8px;padding:12px;font-size:11px;color:var(--text2);line-height:1.7;}
+.instr strong{color:var(--g1);}
+.overall{margin-top:auto;padding:10px;background:var(--bg);border-radius:8px;font-size:11px;text-align:center;color:var(--dim);border:1px solid var(--border);transition:all 0.3s;flex-shrink:0;}
+.overall.ready{color:var(--g1);border-color:var(--g4);background:var(--g5);}
+
+/* STEP 3 */
+.cal-list{display:flex;flex-direction:column;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;}
+.cal-item{display:flex;align-items:center;gap:10px;}
+.cald{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:all 0.3s;}
+.cald.run{background:var(--warn);animation:pulse 1s infinite;}
+.cald.done{background:var(--g2);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.cal-lbl{font-size:12px;color:var(--text2);flex:1;}
+.cal-sta{font-size:10px;color:var(--dim);}
+.cal-bg{height:3px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden;}
+.cal-bar{height:100%;background:linear-gradient(90deg,var(--g2),var(--g1));border-radius:2px;width:0%;transition:width 0.1s;}
+
+/* STEP 4 */
+.succ{text-align:center;padding:32px;}
+.succ-ico{width:72px;height:72px;border-radius:50%;background:var(--g5);border:2px solid var(--g2);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:32px;}
+.sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px;}
+.sum-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;}
+.sum-val{font-size:20px;font-weight:600;color:var(--g1);margin-bottom:3px;}
+.sum-lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;}
+
+/* NAV */
+.navbar{background:var(--surface);border-top:1px solid var(--border);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;}
+.btn{padding:9px 22px;border-radius:var(--r);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;transition:all 0.2s;font-weight:500;}
+.btn-p{background:var(--g1);border:1px solid var(--g1);color:white;}
+.btn-p:hover{background:var(--g2);}
+.btn-p:disabled{opacity:0.4;cursor:not-allowed;}
+.btn-s{background:var(--surface);border:1px solid var(--border);color:var(--text2);}
+.btn-s:hover{border-color:var(--g2);color:var(--g1);}
+.nav-info{font-size:11px;color:var(--dim);}
+</style>
+</head>
+<body>
+<header>
+  <div><div class="logo">ANTHRO3D</div><div class="logo-sub">Setup Assistent</div></div>
+  <div class="steps">
+    <div class="step active" id="pill-1"><div class="step-num">1</div><span>Konfiguration</span></div><div class="sep"></div>
+    <div class="step" id="pill-2"><div class="step-num">2</div><span>Platzierung</span></div><div class="sep"></div>
+    <div class="step" id="pill-3"><div class="step-num">3</div><span>Kalibrierung</span></div><div class="sep"></div>
+    <div class="step" id="pill-4"><div class="step-num">4</div><span>Fertig</span></div>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- STEP 1 -->
+<div class="step-content active" id="step-1">
+  <div class="step-title">Konfiguration wählen</div>
+  <div class="step-desc">Wähle die passende Konfiguration — oder stelle dein eigenes Setup individuell zusammen.</div>
+  <div class="config-grid">
+
+    <!-- COMPACT -->
+    <div class="config-card" id="card-compact" onclick="selectConfig('compact')">
+      <div class="config-name">Compact <span class="cfg-badge bc">3 Kameras</span></div>
+      <div class="config-sub">Für kleinere Physiotherapie-Praxen</div>
+      <div class="spec"><span class="spec-label">Kamerakreis ∅</span><span class="spec-val">3.5 m</span></div>
+      <div class="spec"><span class="spec-label">Abstand Patient</span><span class="spec-val">175 cm</span></div>
+      <div class="spec"><span class="spec-label">Genauigkeit Länge</span><span class="spec-val">±10–15 mm</span></div>
+      <div class="spec"><span class="spec-label">Umfänge</span><span class="spec-val">nicht verfügbar</span></div>
+      <div class="spec"><span class="spec-label">Raum mind.</span><span class="spec-val">4.0 × 4.0 m</span></div>
+      <div class="chip-wrap"><span class="chip ga">CAM 1 Front</span><span class="chip ga">CAM 2 Links</span><span class="chip ga">CAM 3 Rechts</span></div>
+    </div>
+
+    <!-- PRO -->
+    <div class="config-card" id="card-pro" onclick="selectConfig('pro')">
+      <div class="config-name">Pro <span class="cfg-badge bp">4 Kameras</span></div>
+      <div class="config-sub">Für Rehazentren und Sportvereine</div>
+      <div class="spec"><span class="spec-label">Kamerakreis ∅</span><span class="spec-val">5.0 m</span></div>
+      <div class="spec"><span class="spec-label">Abstand Patient</span><span class="spec-val">250 cm</span></div>
+      <div class="spec"><span class="spec-label">Genauigkeit Länge</span><span class="spec-val">±5–10 mm</span></div>
+      <div class="spec"><span class="spec-label">Umfänge (Ellipsen)</span><span class="spec-val">±30–50 mm</span></div>
+      <div class="spec"><span class="spec-label">Raum mind.</span><span class="spec-val">6.0 × 6.0 m</span></div>
+      <div class="chip-wrap"><span class="chip ga">CAM 1 Front</span><span class="chip ga">CAM 2 Rechts</span><span class="chip ga">CAM 3 Hinten</span><span class="chip ga">CAM 4 Links</span></div>
+    </div>
+
+    <!-- INDIVIDUELL — Interaktiver Raumplaner -->
+    <div class="config-card ind-card" id="card-individual" onclick="selectConfig('individual')">
+
+      <!-- LEFT: Eingaben + gesperrte Kameras -->
+      <div onclick="event.stopPropagation()">
+        <div class="config-name in" style="pointer-events:none">Individuell <span class="cfg-badge bi">Custom</span></div>
+        <div class="config-sub" style="pointer-events:none">Gesperrte Kameras einzeichnen — System berechnet optimale Positionen ohne tote Winkel</div>
+
+        <!-- Raumgröße -->
+        <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Raumgröße</div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;margin-bottom:12px;">
+          <div>
+            <div style="font-size:9px;color:var(--dim);margin-bottom:3px;">Breite</div>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <input class="room-input" id="room-w" type="number" value="5" min="2" max="20" step="0.5" oninput="updateInd()">
+              <span style="font-size:10px;color:var(--dim)">m</span>
+            </div>
+          </div>
+          <div style="font-size:14px;color:var(--muted);text-align:center;padding-top:14px;">×</div>
+          <div>
+            <div style="font-size:9px;color:var(--dim);margin-bottom:3px;">Tiefe</div>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <input class="room-input" id="room-d" type="number" value="5" min="2" max="20" step="0.5" oninput="updateInd()">
+              <span style="font-size:10px;color:var(--dim)">m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anzahl Kameras -->
+        <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Kameras gesamt</div>
+        <div class="ind-row" style="margin-bottom:12px;">
+          <span class="ind-lbl" style="font-size:10px;color:var(--dim)">Anzahl</span>
+          <button class="ind-btn" onclick="adjCams(-1)">−</button>
+          <span class="ind-v" id="iv-cams">3</span>
+          <button class="ind-btn" onclick="adjCams(1)">+</button>
+        </div>
+
+        <!-- Gesperrte Kameras -->
+        <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+          Gesperrte Positionen
+          <span style="font-size:9px;color:var(--ind);font-weight:500;margin-left:4px;" id="locked-count">0 gesperrt</span>
+        </div>
+        <div style="font-size:9px;color:var(--muted);margin-bottom:6px;line-height:1.6;">
+          Im Raumplan <strong>klicken</strong> um eine Kamera zu sperren.<br>
+          Gesperrte Kameras stehen fest — das System berechnet die restlichen Positionen optimal.
+        </div>
+
+        <!-- Liste der gesperrten Kameras -->
+        <div id="locked-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:10px;max-height:80px;overflow-y:auto;"></div>
+
+        <!-- Berechnete Ergebnisse -->
+        <div style="background:rgba(92,74,138,0.06);border:1px solid var(--ind4);border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;color:var(--ind);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;font-weight:600;">Optimale Positionierung</div>
+          <div class="spec" style="border-color:var(--ind4)"><span class="spec-label">Freie Kameras</span><span class="spec-val" id="id-free">—</span></div>
+          <div class="spec" style="border-color:var(--ind4)"><span class="spec-label">Abdeckung</span><span class="spec-val" id="id-coverage">—</span></div>
+          <div class="spec" style="border-color:var(--ind4)"><span class="spec-label">Toter Winkel</span><span class="spec-val" id="id-blind">—</span></div>
+          <div class="spec"><span class="spec-label">Genauigkeit</span><span class="spec-val" id="id-acc">—</span></div>
+        </div>
+
+        <button onclick="clearLocked();event.stopPropagation()" style="margin-top:8px;width:100%;padding:5px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--dim);font-family:'Inter',monospace;font-size:10px;cursor:pointer;">↺ Alle gesperrten Positionen löschen</button>
+      </div>
+
+      <!-- RIGHT: Interaktiver Raumplan -->
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;">Raumplan</div>
+          <div style="font-size:9px;color:var(--muted);">Klicken = Kamera sperren</div>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px;cursor:crosshair;" id="ind-canvas-wrap">
+          <canvas id="previewCv" width="224" height="224" onclick="onRoomClick(event)"></canvas>
+        </div>
+        <!-- Legende -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--dim);">
+            <div style="width:8px;height:8px;border-radius:50%;background:#a04848;"></div> Gesperrt
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--dim);">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--g2);"></div> Berechnet
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--dim);">
+            <div style="width:8px;height:8px;border-radius:2px;background:rgba(184,112,48,0.3);border:1px dashed var(--warn);"></div> Toter Winkel
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--muted);line-height:1.6;text-align:center;" id="id-hint">Kameras im Raumplan platzieren</div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<div class="step-content" id="step-2">
+  <div class="step-title">Kameras platzieren</div>
+  <div class="step-desc">Stelle Kamera 1 beliebig auf — das System berechnet automatisch die optimalen Positionen aller anderen Kameras.</div>
+  <div class="pl-layout">
+    <div class="cv-wrap"><canvas id="cv" width="440" height="440"></canvas></div>
+    <div class="sp" id="sp">
+      <div class="instr"><strong>So funktioniert es:</strong><br>Stelle <strong>Kamera 1</strong> auf. Das System berechnet alle anderen Zielpositionen.<br><br>Die <strong>gestrichelte Linie</strong> zeigt den Weg — folge ihr bis sie verschwindet.</div>
+      <div id="cam-list"></div>
+      <div class="overall" id="overall">0 / <span id="total-span">?</span> Kameras bereit</div>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 3 -->
+<div class="step-content" id="step-3">
+  <div class="step-title">Automatische Kalibrierung</div>
+  <div class="step-desc">Das System kalibriert sich jetzt automatisch. Bitte Kameras nicht bewegen.</div>
+  <div class="cal-list">
+    <div class="cal-item"><div class="cald" id="cd1"></div><div style="flex:1"><div class="cal-lbl">Kamera-Positionen berechnen</div><div class="cal-bg"><div class="cal-bar" id="cb1"></div></div></div><div class="cal-sta" id="cs1">Warte…</div></div>
+    <div class="cal-item"><div class="cald" id="cd2"></div><div style="flex:1"><div class="cal-lbl">ArUco Marker stabilisieren</div><div class="cal-bg"><div class="cal-bar" id="cb2"></div></div></div><div class="cal-sta" id="cs2">Warte…</div></div>
+    <div class="cal-item"><div class="cald" id="cd3"></div><div style="flex:1"><div class="cal-lbl" id="cl3">px/mm Faktor berechnen</div><div class="cal-bg"><div class="cal-bar" id="cb3"></div></div></div><div class="cal-sta" id="cs3">Warte…</div></div>
+    <div class="cal-item"><div class="cald" id="cd4"></div><div style="flex:1"><div class="cal-lbl">3D Koordinatensystem aufbauen</div><div class="cal-bg"><div class="cal-bar" id="cb4"></div></div></div><div class="cal-sta" id="cs4">Warte…</div></div>
+    <div class="cal-item" id="ci-st" style="display:none"><div class="cald" id="cdst"></div><div style="flex:1"><div class="cal-lbl">Stereopaar kalibrieren (Disparitätskarte)</div><div class="cal-bg"><div class="cal-bar" id="cbst"></div></div></div><div class="cal-sta" id="csst">Warte…</div></div>
+    <div class="cal-item"><div class="cald" id="cd5"></div><div style="flex:1"><div class="cal-lbl">Kalibrierung speichern</div><div class="cal-bg"><div class="cal-bar" id="cb5"></div></div></div><div class="cal-sta" id="cs5">Warte…</div></div>
+  </div>
+</div>
+
+<!-- STEP 4 -->
+<div class="step-content" id="step-4">
+  <div class="succ">
+    <div class="succ-ico">✓</div>
+    <div class="step-title" style="color:var(--g1)">System bereit!</div>
+    <div class="step-desc">Alle Kameras sind kalibriert und bereit für die Messung.</div>
+    <div class="sum-grid">
+      <div class="sum-card"><div class="sum-val" id="s-cfg">—</div><div class="sum-lbl">Konfiguration</div></div>
+      <div class="sum-card"><div class="sum-val" id="s-cams">—</div><div class="sum-lbl">Kameras aktiv</div></div>
+      <div class="sum-card"><div class="sum-val" id="s-acc">—</div><div class="sum-lbl">Genauigkeit</div></div>
+      <div class="sum-card"><div class="sum-val" id="s-px">—</div><div class="sum-lbl">px/mm Faktor</div></div>
+      <div class="sum-card"><div class="sum-val" id="s-r">—</div><div class="sum-lbl">Kameraabstand</div></div>
+      <div class="sum-card"><div class="sum-val" id="s-st">—</div><div class="sum-lbl">Stereopaare</div></div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-p" onclick="alert('Messung startet...')">▶ Messung starten</button>
+      <button class="btn btn-s" onclick="goTo(1)">↺ Neu kalibrieren</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="navbar">
+  <button class="btn btn-s" id="btnBack" onclick="goBack()" style="visibility:hidden">← Zurück</button>
+  <span class="nav-info" id="navInfo">Schritt 1 von 4</span>
+  <button class="btn btn-p" id="btnNext" onclick="goNext()" disabled>Weiter →</button>
+</div>
+
+<script>
+// ── PRESETS ───────────────────────────────────────────────────────────────────
+const PRESETS={
+  compact:{total:3,pairs:0,base:0,radPx:115,r:175,acc:'±10–15 mm',px:'4.2',
+    ang:{1:0,2:120,3:240},lbl:{1:'Front',2:'Links',3:'Rechts'},stereo:{}},
+  pro:{total:4,pairs:0,base:0,radPx:145,r:250,acc:'±5–10 mm',px:'6.8',
+    ang:{1:0,2:90,3:180,4:270},lbl:{1:'Front',2:'Rechts',3:'Hinten',4:'Links'},stereo:{}},
+};
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let cur=1,cfg=null,animF=null,simT=0;
+let iCams=3, iPairs=0, iBase=8, iRoomW=5, iRoomD=5;
+let indResult=null;
+let camSt={},camPos={},camTgt={},activeCfg=null;
+const CW=440,CH=440,CX=220,CY=220;
+const COLS=['#a04848','#3d6b50','#5a8a6a','#4a6aa8','#8a6a3d','#6a3d8a','#3d7a8a','#8a3d6a','#6a8a3d','#3d4a8a','#8a3d3d','#3d8a6a'];
+
+// ── INDIVIDUAL OPTIMIZER ──────────────────────────────────────────────────────
+// Inputs: room W×D (m), single cams, stereo pairs
+// Output: optimal radius, angles, accuracy estimates, live preview
+function adjCams(d){ iCams=Math.max(1,Math.min(12,iCams+d)); updateInd(); if(cfg==='individual')selectConfig('individual'); }
+function adjPairs(d){ iPairs=Math.max(0,Math.min(4,iPairs+d)); updateInd(); if(cfg==='individual')selectConfig('individual'); }
+
+// ── INDIVIDUAL KAMERA-SYSTEM ─────────────────────────────────────────────────
+// Jede Kamera hat eine berechnete Zielposition.
+// "Fixiert" = Position gesperrt, System darf sie nicht verschieben.
+// "Frei"    = System berechnet optimale Position.
+
+let camLocked = []; // boolean[] — true = fixiert, false = frei
+const CV_SIZE = 224;
+const CV_CX   = 112, CV_CY = 112;
+const CAM_COLS = ['#a04848','#c06030','#3d6b50','#5a8a6a','#3060a0','#7a5ab0','#c07020','#3a7a8a','#5a7a30','#8a3d6a','#3a6a8a','#7a6030'];
+
+function adjCams(d){
+  iCams = Math.max(1, Math.min(12, iCams+d));
+  // Passe camLocked Array an neue Länge an
+  while (camLocked.length < iCams) camLocked.push(false);
+  camLocked = camLocked.slice(0, iCams);
+  updateInd();
+  if(cfg==='individual') selectConfig('individual');
+}
+
+function toggleCamLock(i) {
+  // Mind. 1 Kamera muss frei bleiben
+  const lockedCount = camLocked.filter(Boolean).length;
+  if (!camLocked[i] && lockedCount >= iCams - 1) {
+    document.getElementById('id-hint').textContent = '⚠ Mind. 1 Kamera muss frei bleiben';
+    return;
+  }
+  camLocked[i] = !camLocked[i];
+  updateInd();
+}
+
+function clearLocked() {
+  camLocked = camLocked.map(() => false);
+  updateInd();
+}
+
+function getRoomScale() {
+  const rw = parseFloat(document.getElementById('room-w')?.value) || 5;
+  const rd = parseFloat(document.getElementById('room-d')?.value) || 5;
+  return Math.min((CV_SIZE-24)/rw, (CV_SIZE-24)/rd);
+}
+
+// Klick auf Canvas — nächste Kamera in der Nähe fixieren/lösen
+function onRoomClick(e) {
+  if (cfg !== 'individual' || !indResult) return;
+  const cv   = document.getElementById('previewCv');
+  const rect = cv.getBoundingClientRect();
+  const mx   = (e.clientX - rect.left) * (CV_SIZE / rect.width);
+  const my   = (e.clientY - rect.top)  * (CV_SIZE / rect.height);
+  const radPx = indResult.radius * getRoomScale();
+
+  // Finde nächste Kamera-Position
+  let nearest = -1, nearDist = 20; // max 20px Toleranz
+  for (let i = 0; i < iCams; i++) {
+    const ang = indResult.allAngles[i];
+    const cx  = CV_CX + radPx * Math.cos(ang);
+    const cy  = CV_CY + radPx * Math.sin(ang);
+    const d   = Math.hypot(mx - cx, my - cy);
+    if (d < nearDist) { nearDist = d; nearest = i; }
+  }
+  if (nearest >= 0) toggleCamLock(nearest);
+}
+
+// ── OPTIMIERUNGS-ALGORITHMUS ───────────────────────────────────────────────────
+// Findet optimale Positionen für freie Kameras um maximale Abdeckung zu erreichen
+// ohne tote Winkel — unter Berücksichtigung von gesperrten Positionen
+function optimizeCamPositions(lockedAngles, freeCamCount, radius) {
+  if (freeCamCount === 0) return [];
+
+  // Alle Winkel auf 0–2π normalisieren
+  const locked = lockedAngles.map(a => ((a % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI)).sort((a,b)=>a-b);
+
+  // Finde die größten Lücken zwischen gesperrten Kameras
+  const gaps = [];
+  if (locked.length === 0) {
+    // Keine gesperrten → gleichmäßig verteilen
+    for (let i = 0; i < freeCamCount; i++) {
+      gaps.push(-Math.PI/2 + i * (2*Math.PI / freeCamCount));
+    }
+    return gaps;
+  }
+
+  // Lücken zwischen gesperrten berechnen (inkl. Wrap-around)
+  const allAngles = [...locked, locked[0] + 2*Math.PI];
+  const gapList = [];
+  for (let i = 0; i < locked.length; i++) {
+    gapList.push({ start: allAngles[i], end: allAngles[i+1], size: allAngles[i+1] - allAngles[i] });
+  }
+  gapList.sort((a,b) => b.size - a.size);
+
+  // Verteile freie Kameras proportional in die Lücken
+  const positions = [];
+  const totalGap  = gapList.reduce((s,g) => s + g.size, 0);
+  let remaining   = freeCamCount;
+
+  gapList.forEach((gap, gi) => {
+    const share = gi === gapList.length-1
+      ? remaining
+      : Math.max(1, Math.round((gap.size / totalGap) * freeCamCount));
+    const count = Math.min(share, remaining);
+    for (let i = 0; i < count; i++) {
+      const t = (i + 1) / (count + 1);
+      positions.push(gap.start + t * gap.size);
+    }
+    remaining -= count;
+  });
+
+  return positions;
+}
+
+// Berechne tote Winkel (Bereiche > 60° ohne Kamera-Sicht)
+function calcBlindSpots(allAngles) {
+  if (allAngles.length === 0) return 360;
+  const sorted = allAngles.map(a => ((a%(2*Math.PI))+2*Math.PI)%(2*Math.PI)).sort((a,b)=>a-b);
+  const FOV = 70 * Math.PI/180; // 70° Sichtfeld pro Kamera
+  let covered = 0;
+  // Grobe Abdeckungsberechnung
+  const resolution = 360;
+  let coveredDeg   = 0;
+  for (let deg = 0; deg < resolution; deg++) {
+    const testAng = (deg / resolution) * 2 * Math.PI;
+    for (const camAng of sorted) {
+      let diff = Math.abs(testAng - camAng);
+      if (diff > Math.PI) diff = 2*Math.PI - diff;
+      if (diff < FOV / 2) { coveredDeg++; break; }
+    }
+  }
+  const blindDeg = Math.round((1 - coveredDeg/resolution) * 360);
+  return blindDeg;
+}
+
+function updateInd() {
+  iRoomW = parseFloat(document.getElementById('room-w')?.value) || 5;
+  iRoomD = parseFloat(document.getElementById('room-d')?.value) || 5;
+  document.getElementById('iv-cams').textContent = iCams;
+
+  // Sicherstellen dass camLocked die richtige Länge hat
+  while (camLocked.length < iCams) camLocked.push(false);
+  camLocked = camLocked.slice(0, iCams);
+
+  const scale     = getRoomScale();
+  const optRadius = Math.max(0.8, Math.min((Math.min(iRoomW,iRoomD)/2)-0.4, 2.5));
+
+  // Alle Kamera-Winkel gleichmäßig vorberechnen (Startpositionen)
+  const baseAngles = Array.from({length:iCams}, (_,i) => -Math.PI/2 + i*(2*Math.PI/iCams));
+
+  // Fixierte Kameras behalten ihre Basisposition
+  // Freie Kameras werden optimiert um Lücken zu füllen
+  const lockedAngles = baseAngles.filter((_,i) => camLocked[i]);
+  const freeCount    = camLocked.filter(v => !v).length;
+  const freeAngles   = optimizeCamPositions(lockedAngles, freeCount, optRadius);
+
+  // Alle Winkel in Reihenfolge (fixiert an Basis, frei optimiert)
+  const allAngles = [];
+  let freeIdx = 0;
+  for (let i = 0; i < iCams; i++) {
+    if (camLocked[i]) allAngles.push(baseAngles[i]);
+    else              allAngles.push(freeAngles[freeIdx++] ?? baseAngles[i]);
+  }
+
+  const blindDeg    = calcBlindSpots(allAngles);
+  const coveragePct = Math.max(0, 100 - Math.round(blindDeg/360*100));
+  let acc;
+  if (iCams>=6) acc='±3–5 mm'; else if(iCams>=4) acc='±5–10 mm';
+  else if(iCams>=3) acc='±8–12 mm'; else acc='±12–20 mm';
+
+  indResult = {
+    totalCams:iCams, radius:optRadius,
+    allAngles, lockedAngles, freeAngles,
+    blindDeg, coveragePct, acc,
+    roomW:iRoomW, roomD:iRoomD,
+  };
+
+  // Berechnete Werte
+  const s = id => document.getElementById(id);
+  if(s('id-free'))     s('id-free').textContent     = `${freeCount} von ${iCams}`;
+  if(s('id-coverage')) s('id-coverage').textContent = `${coveragePct}%`;
+  if(s('id-blind'))    s('id-blind').textContent     = blindDeg>5?`${blindDeg}°`:'✓ keiner';
+  if(s('id-acc'))      s('id-acc').textContent       = acc;
+
+  const hintEl = s('id-hint');
+  if (hintEl) {
+    if      (blindDeg <= 5)  hintEl.textContent = '✓ Perfekte Abdeckung — kein toter Winkel';
+    else if (blindDeg <= 30) hintEl.textContent = `⚠ Kleiner toter Winkel (${blindDeg}°) — akzeptabel`;
+    else if (blindDeg <= 90) hintEl.textContent = `⚠ Toter Winkel ${blindDeg}° — mehr Kameras empfohlen`;
+    else                     hintEl.textContent = `✗ Großer toter Winkel (${blindDeg}°) — Positionen anpassen`;
+  }
+
+  // ── Kameraliste mit Schaltern rendern ─────────────────────────────────────
+  const list = document.getElementById('cam-lock-list');
+  if (list) {
+    list.innerHTML = '';
+    for (let i = 0; i < iCams; i++) {
+      const locked = camLocked[i];
+      const col    = CAM_COLS[i % CAM_COLS.length];
+      const row    = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;border:1px solid ${locked?'rgba(160,72,72,0.3)':'var(--border)'};background:${locked?'rgba(160,72,72,0.05)':'var(--bg)'};transition:all 0.2s;`;
+      row.innerHTML = `
+        <div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;${locked?'box-shadow:0 0 5px '+col:''}"></div>
+        <span style="font-size:11px;color:var(--text);flex:1;font-weight:${locked?'500':'400'}">Kamera ${i+1}</span>
+        <span style="font-size:9px;color:${locked?'#a04848':'var(--muted)'};margin-right:4px;">${locked?'🔒 fixiert':'frei'}</span>
+        <label class="sw" onclick="event.stopPropagation()">
+          <input type="checkbox" ${locked?'checked':''} onchange="toggleCamLock(${i})">
+          <div class="sw-slider" style="${locked?'background:#a04848':''}"></div>
+        </label>`;
+      list.appendChild(row);
+    }
+  }
+
+  drawPreview();
+}
+
+function drawPreview() {
+  const cv = document.getElementById('previewCv');
+  if (!cv || !indResult) return;
+  const ctx = cv.getContext('2d');
+  const W = CV_SIZE, H = CV_SIZE, CX = CV_CX, CY = CV_CY;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#f0f4f1'; ctx.fillRect(0,0,W,H);
+
+  const r     = indResult;
+  const scale = getRoomScale();
+  const rw    = r.roomW * scale, rd = r.roomD * scale;
+  const rx    = CX - rw/2, ry = CY - rd/2;
+
+  // Raum
+  ctx.fillStyle='rgba(232,243,234,0.5)'; ctx.fillRect(rx,ry,rw,rd);
+  ctx.strokeStyle='rgba(61,107,80,0.25)'; ctx.lineWidth=1.5;
+  ctx.strokeRect(rx,ry,rw,rd);
+  ctx.fillStyle='rgba(122,152,128,0.5)'; ctx.font='8px Inter'; ctx.textAlign='center';
+  ctx.fillText(`${r.roomW}m × ${r.roomD}m`, CX, ry+10);
+
+  // Kamerakreis (gestrichelt)
+  const radPx = r.radius * scale;
+  ctx.strokeStyle='rgba(92,74,138,0.3)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.arc(CX,CY,radPx,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+
+  // Tote Winkel (rötlich)
+  if (r.allAngles.length > 0 && r.blindDeg > 5) {
+    const FOV = 70*Math.PI/180;
+    for (let deg=0; deg<360; deg++) {
+      const testAng=(deg/360)*2*Math.PI-Math.PI;
+      let covered=false;
+      for (const a of r.allAngles) {
+        let diff=Math.abs(testAng-a); if(diff>Math.PI)diff=2*Math.PI-diff;
+        if(diff<FOV/2){covered=true;break;}
+      }
+      if(!covered){
+        ctx.fillStyle='rgba(184,80,48,0.07)';
+        ctx.beginPath(); ctx.moveTo(CX,CY);
+        ctx.arc(CX,CY,radPx*0.82,testAng-Math.PI/360,testAng+Math.PI/360);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+
+  // ── FOV-Kegel + Kameras ───────────────────────────────────────────────────
+  r.allAngles.forEach((ang, i) => {
+    const px  = CX + radPx * Math.cos(ang);
+    const py  = CY + radPx * Math.sin(ang);
+    const col = CAM_COLS[i % CAM_COLS.length];
+    const locked = camLocked[i] || false;
+
+    // FOV-Kegel
+    drawFOVCone(ctx, CX, CY, px, py, ang, locked
+      ? 'rgba(160,72,72,0.10)' : 'rgba(61,107,80,0.10)');
+
+    // Gummiband-Linie (nur freie Kameras)
+    if (!locked) {
+      ctx.save();
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.4;
+      ctx.lineWidth   = 0.8; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(CX,CY); ctx.lineTo(px,py); ctx.stroke();
+      ctx.setLineDash([]);
+      // Zielring
+      ctx.globalAlpha = 0.45; ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(px,py,14,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 0.35; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(px-5,py); ctx.lineTo(px+5,py);
+      ctx.moveTo(px,py-5); ctx.lineTo(px,py+5); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Kamera-Dot
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(px, py, locked?8:6, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = locked?2:1.5; ctx.stroke();
+
+    // Nummer + Schloss
+    ctx.fillStyle = '#fff'; ctx.font = `bold 7px Inter`; ctx.textAlign = 'center';
+    ctx.fillText(locked ? '🔒' : String(i+1), px, py+2.5);
+
+    // Label außen
+    const lx = CX + (radPx+16)*Math.cos(ang);
+    const ly = CY + (radPx+16)*Math.sin(ang);
+    ctx.fillStyle = col; ctx.font = '7px Inter'; ctx.textAlign = 'center';
+    ctx.fillText(`CAM ${i+1}${locked?' ●':''}`, lx, ly);
+  });
+
+  // Patient-Punkt (Mitte)
+  ctx.fillStyle = '#1a2e20';
+  ctx.beginPath(); ctx.arc(CX, CY, 5, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = 'rgba(26,46,32,0.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(CX, CY-5); ctx.lineTo(CX, CY-14); ctx.stroke();
+}
+
+function drawFOVCone(ctx, cx, cy, px, py, camAng, col) {
+  const fov = 35 * Math.PI / 180;
+  const toCenter = Math.atan2(cy-py, cx-px);
+  const dist = Math.sqrt((cx-px)**2+(cy-py)**2) * 1.3;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px + dist*Math.cos(toCenter-fov), py + dist*Math.sin(toCenter-fov));
+  ctx.lineTo(px + dist*Math.cos(toCenter+fov), py + dist*Math.sin(toCenter+fov));
+  ctx.closePath(); ctx.fill();
+}
+
+function buildIndCfg(){
+  if (!indResult) updateInd();
+  const r   = indResult;
+  const ang = {}, lbl = {}, stereo = {};
+  const dirs = ['Front','Rechts-Vorne','Rechts','Rechts-Hinten','Hinten','Links-Hinten','Links','Links-Vorne','Pos 9','Pos 10','Pos 11','Pos 12'];
+  r.allAngles.forEach((a, i) => {
+    ang[i+1] = a*180/Math.PI;
+    lbl[i+1] = camLocked[i] ? `CAM ${i+1} (fixiert)` : (dirs[i]||`CAM ${i+1}`);
+  });
+  const radPx = Math.max(80, Math.min(170, Math.round(r.radius*46)));
+  return { total:iCams, pairs:0, base:0, radPx, r:Math.round(r.radius*100), acc:r.acc, px:'—', ang, lbl, stereo:{}, stOff:0 };
+}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function goTo(n){
+  document.getElementById('step-'+cur).classList.remove('active');
+  document.getElementById('pill-'+cur).classList.remove('active');
+  if(n>cur)document.getElementById('pill-'+cur).classList.add('done');
+  cur=n;
+  document.getElementById('step-'+cur).classList.add('active');
+  document.getElementById('pill-'+cur).classList.add('active');
+  document.getElementById('navInfo').textContent='Schritt '+cur+' von 4';
+  document.getElementById('btnBack').style.visibility=cur>1?'visible':'hidden';
+  if(cur===2)initPl();if(cur===3)startCal();if(cur===4)showSum();
+  updateNav();
+}
+function goNext(){if(cur<4)goTo(cur+1);}
+function goBack(){if(cur>1)goTo(cur-1);}
+function updateNav(){
+  const b=document.getElementById('btnNext');b.textContent='Weiter →';
+  if(cur===1)b.disabled=!cfg;
+  else if(cur===2)b.disabled=Object.values(camSt).some(s=>s!=='ok');
+  else if(cur===3){b.disabled=true;b.textContent='Kalibrierung…';}
+  else b.style.display='none';
+}
+function selectConfig(t){
+  cfg=t;
+  ['compact','pro','individual'].forEach(x=>document.getElementById('card-'+x).classList.toggle('selected',x===t));
+  if(t==='individual')updateInd();
+  updateNav();
+}
+
+// ── CAM STATE ─────────────────────────────────────────────────────────────────
+function setCam(id,state,dev){
+  camSt[id]=state;
+  const dot=document.getElementById('d-'+id),card=document.getElementById('cc-'+id),
+        det=document.getElementById('dt-'+id),dist=document.getElementById('di-'+id);
+  if(!dot)return;
+  const isSt=activeCfg?.stereo?.[id];
+  dot.className='cd '+(state==='ok'?'ok':isSt?'st':state==='warn'||state==='found'?'warn':'');
+  card.className='cc '+(state==='ok'?'ok':state==='warn'?'warn':isSt?'st':'');
+  if(state==='ok'){det.textContent='Position korrekt ✓';dist.className='cdist hidden';}
+  else if(state==='warn'||state==='found'){
+    det.textContent=id===1?(state==='found'?'Anker gesetzt — berechne Zielpositionen…':'Position anpassen'):'Erkannt — auf Ziel bewegen';
+    dist.textContent='↔ '+(dev!==null?dev.toFixed(1)+' cm':'—');
+    dist.className=dev!==null&&dev<8?'cdist close':'cdist';
+  }else{det.textContent=id===1?'Warte auf Kamera…':(camSt[1]==='waiting'?'Wartet auf Kamera 1…':'Warte auf Kamera…');dist.className='cdist hidden';}
+  const total=activeCfg?.total||3,ok=Object.values(camSt).filter(s=>s==='ok').length;
+  document.getElementById('total-span').textContent=total;
+  const ov=document.getElementById('overall');
+  ov.textContent=ok+' / '+total+' Kameras bereit';
+  if(ok===total){ov.classList.add('ready');ov.textContent='✓ Alle Kameras bereit — weiter!';updateNav();}
+  else ov.classList.remove('ready');
+}
+
+function buildCards(){
+  const list=document.getElementById('cam-list');list.innerHTML='';
+  for(let id=1;id<=activeCfg.total;id++){
+    const isSt=activeCfg.stereo?.[id]||false,lbl=activeCfg.lbl[id]||('CAM '+id);
+    const el=document.createElement('div');el.className='cc'+(isSt?' st':'');el.id='cc-'+id;
+    el.innerHTML=`<div class="ch"><div class="cd" id="d-${id}"></div><span class="cn">Kamera ${id} — ${lbl}</span>${id===1?'<span class="abadge">Referenz</span>':isSt?'<span class="sbadge">Stereo</span>':''}</div><div class="cdet" id="dt-${id}">${id===1?'Warte auf Kamera…':'Wartet auf Kamera 1…'}</div><div class="cdist hidden" id="di-${id}">↔ —</div>`;
+    list.appendChild(el);
+  }
+}
+
+// ── PLACEMENT ─────────────────────────────────────────────────────────────────
+function initPl(){
+  activeCfg=cfg==='individual'?buildIndCfg():PRESETS[cfg];
+  camSt={};camPos={};camTgt={};
+  for(let i=1;i<=activeCfg.total;i++){camSt[i]='waiting';camPos[i]=null;camTgt[i]=null;}
+  buildCards();for(let i=1;i<=activeCfg.total;i++)setCam(i,'waiting',null);
+  if(animF)cancelAnimationFrame(animF);simT=0;runSim();draw();
+}
+
+function compTgts(ancAng){
+  const rp=activeCfg.radPx;
+  for(let id=2;id<=activeCfg.total;id++){
+    const off=(activeCfg.ang[id]-activeCfg.ang[1])*Math.PI/180;
+    const ang=ancAng+off;
+    let x=CX+rp*Math.cos(ang),y=CY+rp*Math.sin(ang);
+    if(activeCfg.stereo?.[id]){
+      const perp=ang+Math.PI/2,so=(activeCfg.stOff||12)/2;
+      if(id%2===0){x+=so*Math.cos(perp);y+=so*Math.sin(perp);}
+      else{x-=so*Math.cos(perp);y-=so*Math.sin(perp);}
+    }
+    camTgt[id]={x,y};
+  }
+}
+
+function pd(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
+function px2cm(p){return(p/activeCfg.radPx)*activeCfg.r;}
+
+function runSim(){
+  const rp=activeCfg.radPx,a1=-90*Math.PI/180,tot=activeCfg.total;
+  setTimeout(()=>{
+    camTgt[1]={x:CX+rp*Math.cos(a1),y:CY+rp*Math.sin(a1)};
+    camPos[1]={x:camTgt[1].x+16,y:camTgt[1].y-10};
+    compTgts(a1);setCam(1,'found',px2cm(pd(camPos[1],camTgt[1])));
+  },1000);
+  setTimeout(()=>{camPos[1]={...camTgt[1]};setCam(1,'ok',0);},2500);
+  let dl=3200;
+  for(let id=2;id<=tot;id++){
+    const i=id;
+    setTimeout(()=>{const t=camTgt[i];if(!t)return;camPos[i]={x:t.x+(Math.random()*50-25),y:t.y+(Math.random()*50-25)};setCam(i,'found',px2cm(pd(camPos[i],t)));},dl);dl+=900;
+    setTimeout(()=>{const t=camTgt[i];if(!t)return;camPos[i]={x:t.x+(Math.random()*12-6),y:t.y+(Math.random()*12-6)};setCam(i,'warn',px2cm(pd(camPos[i],t)));},dl);dl+=900;
+    setTimeout(()=>{if(camTgt[i]){camPos[i]={...camTgt[i]};setCam(i,'ok',0);}},dl);dl+=700;
+  }
+}
+
+// ── CANVAS ────────────────────────────────────────────────────────────────────
+function draw(){
+  const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  simT+=0.018;ctx.clearRect(0,0,CW,CH);ctx.fillStyle='#f0f4f1';ctx.fillRect(0,0,CW,CH);
+  ctx.strokeStyle='rgba(212,224,214,0.45)';ctx.lineWidth=1;
+  for(let x=0;x<CW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
+  for(let y=0;y<CH;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
+  if(!activeCfg){animF=requestAnimationFrame(draw);return;}
+  const rp=activeCfg.radPx,tot=activeCfg.total;
+  ctx.strokeStyle='rgba(176,200,180,0.6)';ctx.lineWidth=1;ctx.setLineDash([6,5]);
+  ctx.beginPath();ctx.arc(CX,CY,rp,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+  const mb=activeCfg.r>200?62:42;
+  ctx.fillStyle='rgba(232,243,234,0.55)';ctx.fillRect(CX-mb,CY-mb,mb*2,mb*2);
+  ctx.strokeStyle='rgba(184,112,48,0.35)';ctx.lineWidth=1;ctx.setLineDash([4,3]);
+  ctx.strokeRect(CX-mb,CY-mb,mb*2,mb*2);ctx.setLineDash([]);
+  ctx.fillStyle='rgba(122,152,128,0.55)';ctx.font='10px Inter';ctx.textAlign='center';ctx.fillText('Messbereich',CX,CY+4);
+
+  // Rubber-band lines
+  for(let id=1;id<=tot;id++){
+    const pos=camPos[id],tgt=camTgt[id],st=camSt[id];
+    if(!pos||!tgt||st==='ok')continue;
+    const d=pd(pos,tgt);if(d<3)continue;
+    const col=COLS[(id-1)%COLS.length],pr=Math.min(d/80,1),al=0.25+pr*0.45;
+    ctx.save();ctx.strokeStyle=col;ctx.globalAlpha=al;ctx.lineWidth=0.8;ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.moveTo(pos.x,pos.y);ctx.lineTo(tgt.x,tgt.y);ctx.stroke();ctx.setLineDash([]);
+    const dx=tgt.x-pos.x,dy=tgt.y-pos.y,len=Math.sqrt(dx*dx+dy*dy);
+    if(len>0){const ux=dx/len,uy=dy/len,ax=tgt.x-ux*14,ay=tgt.y-uy*14;
+      ctx.globalAlpha=al+0.15;ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.moveTo(ax-uy*5,ay+ux*5);ctx.lineTo(tgt.x,tgt.y);ctx.lineTo(ax+uy*5,ay-ux*5);ctx.stroke();}
+    const mx=(pos.x+tgt.x)/2,my=(pos.y+tgt.y)/2;
+    ctx.globalAlpha=Math.min(al+0.2,0.85);ctx.fillStyle='#fff';ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(mx-14,my-8,28,14,3);else ctx.rect(mx-14,my-8,28,14);ctx.fill();
+    ctx.fillStyle=col;ctx.font='bold 9px Inter';ctx.textAlign='center';ctx.fillText(px2cm(d).toFixed(1)+' cm',mx,my+3);
+    ctx.restore();
+  }
+
+  // Target rings
+  for(let id=1;id<=tot;id++){
+    const tgt=camTgt[id],st=camSt[id];if(!tgt||st==='ok')continue;
+    const col=COLS[(id-1)%COLS.length],pu=0.35+0.25*Math.sin(simT*3+id*2);
+    ctx.save();ctx.globalAlpha=pu*0.6;ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.arc(tgt.x,tgt.y,17,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    ctx.globalAlpha=pu*0.45;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(tgt.x-5,tgt.y);ctx.lineTo(tgt.x+5,tgt.y);ctx.moveTo(tgt.x,tgt.y-5);ctx.lineTo(tgt.x,tgt.y+5);ctx.stroke();
+    ctx.restore();
+  }
+
+  // Camera dots
+  for(let id=1;id<=tot;id++){
+    const pos=camPos[id],tgt=camTgt[id],st=camSt[id],col=COLS[(id-1)%COLS.length];
+    const isSt=activeCfg.stereo?.[id]||false,dp=pos||tgt;if(!dp)continue;
+    ctx.save();
+    if(st==='ok'){
+      ctx.fillStyle=col;ctx.beginPath();ctx.arc(dp.x,dp.y,13,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='bold 10px Inter';ctx.textAlign='center';ctx.fillText('✓',dp.x,dp.y+4);
+      ctx.globalAlpha=0.2;ctx.strokeStyle=col;ctx.lineWidth=6;ctx.beginPath();ctx.arc(dp.x,dp.y,16,0,Math.PI*2);ctx.stroke();
+    }else if(st==='warn'||st==='found'){
+      const a=0.65+0.15*Math.sin(simT*4+id);
+      ctx.globalAlpha=a;ctx.fillStyle=col+'99';ctx.beginPath();ctx.arc(dp.x,dp.y,12,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle=col;ctx.lineWidth=isSt?2.5:2;ctx.beginPath();ctx.arc(dp.x,dp.y,12,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle=col;ctx.globalAlpha=1;ctx.font='bold 10px Inter';ctx.textAlign='center';ctx.fillText(id,dp.x,dp.y+4);
+      if(isSt&&id%2===0&&camPos[id-1]){ctx.globalAlpha=0.3;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([2,2]);ctx.beginPath();ctx.moveTo(dp.x,dp.y);ctx.lineTo(camPos[id-1].x,camPos[id-1].y);ctx.stroke();ctx.setLineDash([]);}
+    }else{
+      const a=0.35+0.25*Math.sin(simT*3+id);
+      ctx.globalAlpha=a;ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.fillStyle=col+'18';
+      ctx.beginPath();ctx.arc(dp.x,dp.y,12,0,Math.PI*2);ctx.fill();ctx.stroke();
+    }
+    if(tgt){const ang=Math.atan2(tgt.y-CY,tgt.x-CX),lx=CX+(rp+26)*Math.cos(ang),ly=CY+(rp+26)*Math.sin(ang);
+      ctx.globalAlpha=0.85;ctx.fillStyle=col;ctx.font='500 9px Inter';ctx.textAlign='center';ctx.fillText(activeCfg.lbl[id]||('CAM '+id),lx,ly-3);}
+    ctx.restore();
+  }
+
+  ctx.fillStyle='#1a2e20';ctx.beginPath();ctx.arc(CX,CY,8,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.strokeStyle='rgba(26,46,32,0.35)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(CX,CY-8);ctx.lineTo(CX,CY-20);ctx.stroke();
+  animF=requestAnimationFrame(draw);
+}
+
+// ── CALIBRATION ────────────────────────────────────────────────────────────────
+function startCal(){
+  const hasSt=activeCfg?.pairs>0;
+  if(hasSt){document.getElementById('ci-st').style.display='flex';document.getElementById('cl3').textContent='px/mm Faktor + Rektifizierung';}
+  const steps=[{i:'1',d:400,dur:1200},{i:'2',d:1700,dur:1600},{i:'3',d:3400,dur:1000},{i:'4',d:4500,dur:1400}];
+  if(hasSt)steps.push({i:'st',d:6000,dur:2000});
+  steps.push({i:'5',d:hasSt?8200:6000,dur:800});
+  steps.forEach(s=>{
+    setTimeout(()=>{
+      const dot=document.getElementById('cd'+s.i),bar=document.getElementById('cb'+s.i),sta=document.getElementById('cs'+s.i);
+      if(!dot)return;dot.className='cald run';sta.textContent='Läuft…';
+      let p=0;const iv=setInterval(()=>{p+=2;bar.style.width=Math.min(p,100)+'%';
+        if(p>=100){clearInterval(iv);dot.className='cald done';sta.textContent='OK ✓';}},s.dur/50);
+    },s.d);
+  });
+  setTimeout(()=>{document.getElementById('btnNext').disabled=false;document.getElementById('btnNext').textContent='Weiter →';goTo(4);},hasSt?9500:7500);
+}
+
+// ── SUMMARY ───────────────────────────────────────────────────────────────────
+function showSum(){
+  if(!activeCfg)return;
+  const names={compact:'Compact',pro:'Pro',individual:'Individuell'};
+  document.getElementById('s-cfg').textContent=names[cfg]||cfg;
+  document.getElementById('s-cams').textContent=activeCfg.total+' / '+activeCfg.total;
+  document.getElementById('s-acc').textContent=activeCfg.acc;
+  document.getElementById('s-px').textContent=activeCfg.px+' px/mm';
+  document.getElementById('s-r').textContent=(activeCfg.r/100).toFixed(2)+' m';
+  document.getElementById('s-st').textContent=activeCfg.pairs>0?activeCfg.pairs+' Paar(e)':'—';
+}
+
+// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
+let ws=null;
+function connectWS(){
+  try{ws=new WebSocket('ws://localhost:8766');
+    ws.onopen=()=>console.log('WS verbunden');
+    ws.onmessage=(e)=>{try{const d=JSON.parse(e.data);if(cur===2)fromWS(d);}catch(e){}};
+    ws.onclose=()=>setTimeout(connectWS,2000);
+  }catch(e){}
+}
+function fromWS(data){
+  if(!activeCfg)return;
+  Object.keys(data).forEach(key=>{
+    const id=parseInt(key),cam=data[key];if(!cam||isNaN(id))return;
+    if(cam.canvas_x!==undefined)camPos[id]={x:cam.canvas_x,y:cam.canvas_y};
+    const dev=cam.deviation_cm??null,st=cam.status;
+    if(st==='ok')setCam(id,'ok',0);else if(st==='warn')setCam(id,'warn',dev);
+    else if(st==='found')setCam(id,'found',dev);else setCam(id,'waiting',null);
+    if(id===1&&(st==='found'||st==='ok')&&cam.angle_rad!==undefined){camTgt[1]=camPos[1];compTgts(cam.angle_rad);}
+  });
+}
+
+updateInd(); connectWS(); updateNav();
+// camLocked initialisieren
+camLocked = Array(iCams).fill(false);
+</script>
+</body>
+</html>

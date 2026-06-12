@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ANTHRO3D — Session Player</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#f0f4f1;--surface:#fff;--border:#d4e0d6;
+  --g1:#3d6b50;--g2:#5a8a6a;--g3:#6a9a7a;--g4:#c2dbc8;--g5:#e8f3ea;
+  --text:#1a2e20;--text2:#3d5a44;--dim:#7a9880;--muted:#b0c8b4;
+  --warn:#b87030;--danger:#a04848;--blue:#3060a0;--r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;}
+
+/* ── LOADING ── */
+#loadingScreen{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:90;}
+.loading-logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--g1);margin-bottom:28px;}
+.loading-bar-bg{width:260px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:10px;}
+.loading-bar{height:100%;background:linear-gradient(90deg,var(--g2),var(--g3));width:0%;transition:width 0.1s;border-radius:2px;}
+.loading-txt{font-size:11px;color:var(--dim);}
+
+/* Drop-overlay (beim Drag über das Fenster) */
+#dropOverlay{position:fixed;inset:0;background:rgba(232,243,234,0.92);border:3px dashed var(--g2);z-index:200;display:none;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--g1);}
+
+/* Leerer Player Hinweis */
+#emptyState{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;z-index:1;}
+.es-icon{font-size:40px;margin-bottom:12px;opacity:0.3;}
+.es-txt{font-size:13px;color:var(--muted);text-align:center;line-height:1.8;}
+#fileInput{display:none;}
+
+/* ── PLAYER ── */
+#player{position:fixed;inset:0;flex-direction:column;}
+
+/* HEADER */
+.ph{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;}
+.ph-logo{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;color:var(--g1);letter-spacing:0.08em;}
+.ph-sep{width:1px;height:20px;background:var(--border);}
+.ph-session{font-size:11px;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ph-badge{font-size:9px;padding:3px 10px;border-radius:20px;border:1px solid;letter-spacing:0.05em;font-weight:500;}
+.ph-badge.stereo{border-color:rgba(61,107,80,0.4);color:var(--g1);background:var(--g5);}
+.ph-badge.mono{border-color:var(--muted);color:var(--dim);background:var(--bg);}
+.hbtn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--dim);font-family:'Inter',sans-serif;font-size:11px;cursor:pointer;transition:all 0.15s;}
+.hbtn:hover{border-color:var(--g2);color:var(--g1);}
+.hbtn.danger:hover{border-color:var(--danger);color:var(--danger);}
+
+/* BODY */
+.pb{flex:1;display:grid;grid-template-columns:210px 1fr 260px;overflow:hidden;}
+
+/* LEFT PANEL */
+.pl{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;}
+.pl-title{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em;margin-bottom:8px;margin-top:14px;font-weight:500;}
+.pl-title:first-child{margin-top:0;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(212,224,214,0.6);}
+.toggle-row:last-child{border:none;}
+.toggle-lbl{font-size:11px;color:var(--text);display:flex;align-items:center;gap:6px;}
+.tdot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.sw{position:relative;width:30px;height:17px;flex-shrink:0;}
+.sw input{opacity:0;width:0;height:0;}
+.sw-slider{position:absolute;inset:0;background:var(--muted);border-radius:9px;cursor:pointer;transition:0.2s;}
+.sw input:checked+.sw-slider{background:var(--g2);}
+.sw-slider:before{content:'';position:absolute;width:13px;height:13px;left:2px;top:2px;background:#fff;border-radius:50%;transition:0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.15);}
+.sw input:checked+.sw-slider:before{transform:translateX(13px);}
+.info-block{font-size:10px;color:var(--dim);line-height:2.2;padding:4px 0;}
+.info-block span{color:var(--text);font-weight:500;}
+
+/* CENTER */
+.pc{position:relative;overflow:hidden;background:#e8ede9;}
+#threeCanvas{display:block;width:100%;height:100%;}
+.view-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--dim);pointer-events:none;letter-spacing:0.08em;background:rgba(255,255,255,0.7);padding:3px 10px;border-radius:20px;}
+.frame-info{position:absolute;top:10px;left:10px;font-size:9px;color:var(--dim);background:rgba(255,255,255,0.8);padding:3px 8px;border-radius:6px;border:1px solid var(--border);}
+
+/* RIGHT PANEL */
+.pr{background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;}
+.height-hero{text-align:center;padding:16px;border-bottom:1px solid var(--border);background:var(--g5);}
+.height-lbl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;}
+.height-val{font-family:'Syne',sans-serif;font-size:34px;font-weight:800;color:var(--g1);}
+.height-mode{font-size:9px;color:var(--muted);margin-top:3px;}
+.pr-section{padding:12px 14px;border-bottom:1px solid var(--border);}
+.pr-title{font-size:10px;font-weight:600;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:5px;}
+.meas-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.mc{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;transition:all 0.3s;}
+.mc.hi{border-color:var(--g4);background:var(--g5);}
+.mc.warn{border-color:rgba(184,112,48,0.3);background:#fdf8f0;}
+.mc-lbl{font-size:8px;color:var(--muted);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.05em;}
+.mc-val{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--g1);}
+.mc-val.na{color:var(--muted);font-size:10px;font-weight:400;font-family:'Inter',sans-serif;}
+
+/* Asymmetrie */
+.asym-row{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.asym-name{font-size:10px;color:var(--dim);width:76px;flex-shrink:0;}
+.asym-bars{flex:1;display:flex;align-items:center;gap:2px;}
+.asym-l{height:5px;border-radius:2px;background:var(--g2);transition:width 0.4s;}
+.asym-r{height:5px;border-radius:2px;background:var(--blue);transition:width 0.4s;}
+.asym-mid{width:1px;height:9px;background:var(--border);flex-shrink:0;}
+.asym-val{font-size:9px;color:var(--dim);width:34px;text-align:right;}
+
+/* TIMELINE */
+.ptl{height:68px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;justify-content:center;padding:0 16px;gap:8px;}
+.tl-top{display:flex;align-items:center;gap:8px;}
+.tl-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:all 0.15s;}
+.tl-btn:hover{border-color:var(--g2);color:var(--g1);}
+.tl-btn.play{background:var(--g1);color:#fff;border-color:var(--g1);}
+.tl-btn.play:hover{background:var(--g2);}
+.tl-bar-wrap{flex:1;height:6px;background:var(--border);border-radius:3px;cursor:pointer;position:relative;}
+.tl-fill{height:100%;background:linear-gradient(90deg,var(--g2),var(--g3));border-radius:3px;pointer-events:none;transition:width 0.05s;}
+.tl-thumb{position:absolute;top:50%;width:14px;height:14px;background:var(--g1);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 1px 4px rgba(61,107,80,0.4);}
+.tl-time{font-size:10px;color:var(--dim);min-width:72px;text-align:right;}
+.spd-wrap{display:flex;gap:3px;}
+.spd{font-size:9px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--dim);cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.15s;}
+.spd:hover,.spd.active{border-color:var(--g2);color:var(--g1);background:var(--g5);}
+.tl-key{font-size:9px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<!-- Drop overlay (Drag & Drop über das Fenster) -->
+<div id="dropOverlay">📂 Session hier ablegen</div>
+
+<!-- LOADING -->
+<div id="loadingScreen">
+  <div class="loading-logo">ANTHRO3D</div>
+  <div class="loading-bar-bg"><div class="loading-bar" id="loadBar"></div></div>
+  <div class="loading-txt" id="loadTxt">Lade Session...</div>
+</div>
+
+<!-- PLAYER — sofort sichtbar -->
+<div id="player" style="display:flex;flex-direction:column;position:fixed;inset:0;">
+
+  <div class="ph">
+    <div class="ph-logo">ANTHRO3D</div>
+    <div class="ph-sep"></div>
+    <div class="ph-session" id="phSession">Keine Session geladen</div>
+    <div class="ph-badge mono" id="phBadge" style="display:none">—</div>
+    <button class="hbtn" onclick="document.getElementById('fileInput').click()" title="Session öffnen (.anthro3d)">📂 Öffnen</button>
+    <button class="hbtn" onclick="toggleLang()">DE / EN</button>
+    <button class="hbtn danger" id="closeBtn" onclick="closeSession()" style="display:none">✕ Schließen</button>
+  </div>
+
+  <div class="pb">
+
+    <!-- LEFT -->
+    <div class="pl">
+      <div class="pl-title" id="lbl-view">Ansicht</div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--g2)"></div><span id="lbl-cloud">Punktwolke</span></span>
+        <label class="sw"><input type="checkbox" id="t-cloud" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--g1)"></div><span id="lbl-skel">Skelett</span></span>
+        <label class="sw"><input type="checkbox" id="t-skel" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--blue)"></div><span id="lbl-axis">Achsenlinien</span></span>
+        <label class="sw"><input type="checkbox" id="t-axis" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--warn)"></div><span id="lbl-lot">Körperlot</span></span>
+        <label class="sw"><input type="checkbox" id="t-lot" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--g3)"></div><span id="lbl-seg">Segmentlängen</span></span>
+        <label class="sw"><input type="checkbox" id="t-seg" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:var(--danger)"></div><span id="lbl-spine">Wirbelsäule</span></span>
+        <label class="sw"><input type="checkbox" id="t-spine" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl"><div class="tdot" style="background:#7a6ab0"></div><span id="lbl-angles">Winkelangaben</span></span>
+        <label class="sw"><input type="checkbox" id="t-angles" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+
+      <div class="pl-title" id="lbl-meas-toggle">Messwerte</div>
+      <div class="toggle-row">
+        <span class="toggle-lbl" id="lbl-lengths">Längen</span>
+        <label class="sw"><input type="checkbox" id="t-lengths" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl" id="lbl-angles-t">Winkel</span>
+        <label class="sw"><input type="checkbox" id="t-anglesp" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl" id="lbl-circ">Umfänge</span>
+        <label class="sw"><input type="checkbox" id="t-circ" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-lbl" id="lbl-asym">Asymmetrie</span>
+        <label class="sw"><input type="checkbox" id="t-asym" checked onchange="updateVis()"><div class="sw-slider"></div></label>
+      </div>
+
+      <div class="pl-title" id="lbl-info">Session Info</div>
+      <div class="info-block">
+        <span id="info-frames">—</span> Frames<br>
+        <span id="info-dur">—</span> Sekunden<br>
+        <span id="info-fps">—</span> fps Aufnahme<br>
+        <span id="info-pat">—</span>
+      </div>
+
+      <div class="pl-title">Tastenkürzel</div>
+      <div class="info-block" style="font-size:9px;line-height:2;">
+        <span style="color:var(--g1)">Space</span> Play/Pause<br>
+        <span style="color:var(--g1)">← →</span> ±1 Frame<br>
+        <span style="color:var(--g1)">↑ ↓</span> ±10 Frames<br>
+        <span style="color:var(--g1)">L</span> Sprache
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="pc" id="threeWrap">
+      <canvas id="threeCanvas"></canvas>
+      <div id="emptyState">
+        <div class="es-icon">📂</div>
+        <div class="es-txt">Noch keine Session geladen<br>Oben auf <strong>Öffnen</strong> klicken<br>oder Datei hier hineinziehen</div>
+      </div>
+      <div class="frame-info" id="frameInfo" style="display:none">Frame — / —</div>
+      <div class="view-hint" style="display:none" id="viewHint">Ziehen = drehen · Scroll = zoom · Rechtsklick = verschieben</div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="pr">
+
+      <div class="height-hero">
+        <div class="height-lbl" id="lbl-height">Körpergröße</div>
+        <div class="height-val" id="val-height">—</div>
+        <div class="height-mode" id="val-height-mode">Warte auf Daten...</div>
+      </div>
+
+      <div class="pr-section" id="sec-lengths">
+        <div class="pr-title">📐 <span id="lbl-sec-lengths">Segmentlängen</span></div>
+        <div class="meas-grid">
+          <div class="mc hi"><div class="mc-lbl" id="lbl-shoulder_w">Schulterbreite</div><div class="mc-val na" id="val-shoulder_w">—</div></div>
+          <div class="mc hi"><div class="mc-lbl" id="lbl-hip_w">Hüftbreite</div><div class="mc-val na" id="val-hip_w">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-arm_l">Oberarm L</div><div class="mc-val na" id="val-arm_l">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-arm_r">Oberarm R</div><div class="mc-val na" id="val-arm_r">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-thigh_l">Oberschenkel L</div><div class="mc-val na" id="val-thigh_l">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-thigh_r">Oberschenkel R</div><div class="mc-val na" id="val-thigh_r">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-shin_l">Unterschenkel L</div><div class="mc-val na" id="val-shin_l">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-shin_r">Unterschenkel R</div><div class="mc-val na" id="val-shin_r">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-torso">Rumpflänge</div><div class="mc-val na" id="val-torso">—</div></div>
+        </div>
+      </div>
+
+      <div class="pr-section" id="sec-anglesp">
+        <div class="pr-title">📐 <span id="lbl-sec-angles">Achsenwinkel</span></div>
+        <div class="meas-grid">
+          <div class="mc"><div class="mc-lbl" id="lbl-shoulder_ang">Schulterachse</div><div class="mc-val na" id="val-shoulder_ang">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-hip_ang">Beckenachse</div><div class="mc-val na" id="val-hip_ang">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-hws">HWS</div><div class="mc-val na" id="val-hws">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-bws">BWS</div><div class="mc-val na" id="val-bws">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-lws">LWS</div><div class="mc-val na" id="val-lws">—</div></div>
+        </div>
+      </div>
+
+      <div class="pr-section" id="sec-circ">
+        <div class="pr-title">⭕ <span id="lbl-sec-circ">Umfänge</span></div>
+        <div class="meas-grid">
+          <div class="mc"><div class="mc-lbl" id="lbl-circ_chest">Brust</div><div class="mc-val na" id="val-circ_chest">—</div></div>
+          <div class="mc"><div class="mc-lbl" id="lbl-circ_hip">Hüfte</div><div class="mc-val na" id="val-circ_hip">—</div></div>
+        </div>
+      </div>
+
+      <div class="pr-section" id="sec-asym">
+        <div class="pr-title">⚖️ <span id="lbl-sec-asym">Asymmetrie L/R</span></div>
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-arm">Oberarm</div><div class="asym-bars"><div class="asym-l" id="asym-arm-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-arm-r" style="width:50%"></div></div><div class="asym-val" id="asym-arm-v">—</div></div>
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-thigh">Oberschenkel</div><div class="asym-bars"><div class="asym-l" id="asym-thigh-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-thigh-r" style="width:50%"></div></div><div class="asym-val" id="asym-thigh-v">—</div></div>
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-shin">Unterschenkel</div><div class="asym-bars"><div class="asym-l" id="asym-shin-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-shin-r" style="width:50%"></div></div><div class="asym-val" id="asym-shin-v">—</div></div>
+        <div style="margin-top:5px;display:flex;gap:10px;font-size:9px;color:var(--muted);">
+          <span><span style="color:var(--g2)">■</span> Links</span>
+          <span><span style="color:var(--blue)">■</span> Rechts</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="ptl">
+    <div class="tl-top">
+      <button class="tl-btn" onclick="skipFrames(-10)" title="−10">⏮</button>
+      <button class="tl-btn" onclick="skipFrames(-1)" title="−1">◀</button>
+      <button class="tl-btn play" id="playBtn" onclick="togglePlay()">▶</button>
+      <button class="tl-btn" onclick="skipFrames(1)" title="+1">▶</button>
+      <button class="tl-btn" onclick="skipFrames(10)" title="+10">⏭</button>
+      <div class="tl-bar-wrap" id="tlBar">
+        <div class="tl-fill" id="tlFill" style="width:0%"></div>
+        <div class="tl-thumb" id="tlThumb" style="left:0%"></div>
+      </div>
+      <div class="tl-time" id="tlTime">0.0s / 0.0s</div>
+      <div class="spd-wrap">
+        <button class="spd" onclick="setSpeed(0.25,this)">¼×</button>
+        <button class="spd active" onclick="setSpeed(1,this)">1×</button>
+        <button class="spd" onclick="setSpeed(2,this)">2×</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let session=null, curFrame=0, playing=false, speed=1.0, lang='de', playInterval=null;
+let vis={cloud:true,skel:true,axis:true,lot:true,seg:true,spine:true,angles:true,lengths:true,anglesp:true,circ:true,asym:true};
+
+const L={
+  de:{height:'Körpergröße',shoulder_w:'Schulterbreite',hip_w:'Hüftbreite',arm_l:'Oberarm L',arm_r:'Oberarm R',
+      thigh_l:'Oberschenkel L',thigh_r:'Oberschenkel R',shin_l:'Unterschenkel L',shin_r:'Unterschenkel R',
+      torso:'Rumpflänge',shoulder_ang:'Schulterachse',hip_ang:'Beckenachse',hws:'HWS',bws:'BWS',lws:'LWS',
+      circ_chest:'Brust',circ_hip:'Hüfte',
+      view:'Ansicht',cloud:'Punktwolke',skel:'Skelett',axis:'Achsenlinien',lot:'Körperlot',
+      seg:'Segmentlängen',spine:'Wirbelsäule',angles:'Winkelangaben',
+      lengths:'Längen','angles-t':'Winkel',circ:'Umfänge',asym:'Asymmetrie',info:'Session Info',
+      'sec-lengths':'Segmentlängen','sec-angles':'Achsenwinkel','sec-circ':'Umfänge','sec-asym':'Asymmetrie L/R',
+      arm:'Oberarm',thigh:'Oberschenkel',shin:'Unterschenkel'},
+  en:{height:'Body Height',shoulder_w:'Shoulder Width',hip_w:'Hip Width',arm_l:'Upper Arm L',arm_r:'Upper Arm R',
+      thigh_l:'Thigh L',thigh_r:'Thigh R',shin_l:'Shin L',shin_r:'Shin R',
+      torso:'Torso',shoulder_ang:'Shoulder Axis',hip_ang:'Pelvis Axis',hws:'Cervical',bws:'Thoracic',lws:'Lumbar',
+      circ_chest:'Chest',circ_hip:'Hip',
+      view:'View',cloud:'Point Cloud',skel:'Skeleton',axis:'Axis Lines',lot:'Plumb Line',
+      seg:'Segment Lengths',spine:'Spine',angles:'Angles',
+      lengths:'Lengths','angles-t':'Angles',circ:'Circumferences',asym:'Asymmetry',info:'Session Info',
+      'sec-lengths':'Segment Lengths','sec-angles':'Axis Angles','sec-circ':'Circumferences','sec-asym':'Asymmetry L/R',
+      arm:'Upper Arm',thigh:'Thigh',shin:'Shin'}
+};
+
+// ── THREE.JS ──────────────────────────────────────────────────────────────────
+let renderer,scene,camera;
+let cloudObj,skelObj,axisObj,lotObj,spineObj,segObjs=[];
+let spherical={theta:0.3,phi:1.2,r:2.8};
+let target=new THREE.Vector3(0,0,0);
+let isDrag=false,isRight=false,lastMouse={x:0,y:0};
+
+function initThree(){
+  const wrap=document.getElementById('threeWrap');
+  const W=wrap.clientWidth,H=wrap.clientHeight;
+  renderer=new THREE.WebGLRenderer({canvas:document.getElementById('threeCanvas'),antialias:true});
+  renderer.setSize(W,H);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setClearColor(0xe8ede9,1);
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(50,W/H,0.01,50);
+  scene.add(new THREE.AmbientLight(0xffffff,0.8));
+  const d=new THREE.DirectionalLight(0xffffff,0.4);
+  d.position.set(1,2,2); scene.add(d);
+  const grid=new THREE.GridHelper(4,20,0xd4e0d6,0xd4e0d6);
+  grid.position.y=-1.2; scene.add(grid);
+  setupOrbit();
+  window.addEventListener('resize',()=>{
+    const W2=wrap.clientWidth,H2=wrap.clientHeight;
+    renderer.setSize(W2,H2); camera.aspect=W2/H2; camera.updateProjectionMatrix();
+  });
+  updateCamera();
+  (function animate(){requestAnimationFrame(animate);renderer.render(scene,camera);})();
+}
+
+function setupOrbit(){
+  const cv=document.getElementById('threeCanvas');
+  cv.addEventListener('mousedown',e=>{isDrag=true;isRight=e.button===2;lastMouse={x:e.clientX,y:e.clientY};e.preventDefault();});
+  cv.addEventListener('contextmenu',e=>e.preventDefault());
+  window.addEventListener('mousemove',e=>{
+    if(!isDrag)return;
+    const dx=e.clientX-lastMouse.x,dy=e.clientY-lastMouse.y;
+    lastMouse={x:e.clientX,y:e.clientY};
+    if(isRight){
+      const r=new THREE.Vector3(),u=new THREE.Vector3();
+      camera.getWorldDirection(new THREE.Vector3());
+      r.crossVectors(camera.getWorldDirection(new THREE.Vector3()),camera.up).normalize();
+      u.copy(camera.up).normalize();
+      target.addScaledVector(r,-dx*0.004); target.addScaledVector(u,dy*0.004);
+    } else {
+      spherical.theta-=dx*0.008; spherical.phi-=dy*0.008;
+      spherical.phi=Math.max(0.1,Math.min(Math.PI-0.1,spherical.phi));
+    }
+    updateCamera();
+  });
+  window.addEventListener('mouseup',()=>isDrag=false);
+  cv.addEventListener('wheel',e=>{spherical.r=Math.max(0.5,Math.min(8,spherical.r+e.deltaY*0.004));updateCamera();e.preventDefault();},{passive:false});
+  // Touch
+  let lt=null,ltd=null;
+  cv.addEventListener('touchstart',e=>{
+    if(e.touches.length===1)lt={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    else if(e.touches.length===2)ltd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    e.preventDefault();},{passive:false});
+  cv.addEventListener('touchmove',e=>{
+    if(e.touches.length===1&&lt){
+      const dx=e.touches[0].clientX-lt.x,dy=e.touches[0].clientY-lt.y;
+      lt={x:e.touches[0].clientX,y:e.touches[0].clientY};
+      spherical.theta-=dx*0.008; spherical.phi-=dy*0.008;
+      spherical.phi=Math.max(0.1,Math.min(Math.PI-0.1,spherical.phi)); updateCamera();
+    } else if(e.touches.length===2&&ltd){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      spherical.r=Math.max(0.5,Math.min(8,spherical.r-(d-ltd)*0.008)); ltd=d; updateCamera();
+    } e.preventDefault();},{passive:false});
+  cv.addEventListener('touchend',()=>{lt=null;ltd=null;});
+}
+
+function updateCamera(){
+  camera.position.set(
+    target.x+spherical.r*Math.sin(spherical.phi)*Math.sin(spherical.theta),
+    target.y+spherical.r*Math.cos(spherical.phi),
+    target.z+spherical.r*Math.sin(spherical.phi)*Math.cos(spherical.theta));
+  camera.lookAt(target);
+}
+
+// ── SESSION LADEN ─────────────────────────────────────────────────────────────
+async function loadSession(file){
+  const ls=document.getElementById('loadingScreen'); ls.style.display='flex';
+  setLoad(5,'Öffne Datei...');
+  try{
+    const buf=await file.arrayBuffer();
+    setLoad(15,'Entpacke...');
+    const zip=await JSZip.loadAsync(buf);
+    setLoad(25,'Lese Metadaten...');
+    const meta=JSON.parse(await zip.file('session.json').async('string'));
+    const frameFiles=Object.keys(zip.files).filter(f=>f.match(/frames\/\d+_data\.json/)).sort();
+    const frames=[];
+    for(let i=0;i<frameFiles.length;i++){
+      if(i%10===0)setLoad(30+Math.round(i/frameFiles.length*60),`Frame ${i+1}/${frameFiles.length}...`);
+      const data=JSON.parse(await zip.file(frameFiles[i]).async('string'));
+      const prefix=frameFiles[i].replace('_data.json','');
+      let jpgUrl=null;
+      const jf=zip.file(prefix+'_rgb.jpg');
+      if(jf){const b=new Blob([await jf.async('arraybuffer')],{type:'image/jpeg'});jpgUrl=URL.createObjectURL(b);}
+      frames.push({...data,jpgUrl});
+    }
+    setLoad(95,'Initialisiere 3D...');
+    session={meta,frames};
+    setupPlayer();
+    setLoad(100,'Bereit!');
+    setTimeout(()=>{
+      ls.style.display='none';
+      document.getElementById('emptyState').style.display='none';
+      document.getElementById('frameInfo').style.display='block';
+      document.getElementById('viewHint').style.display='block';
+      document.getElementById('phBadge').style.display='';
+      document.getElementById('closeBtn').style.display='';
+      if(!renderer)initThree();
+      showFrame(0);
+    },300);
+  }catch(e){
+    alert('Fehler: '+e.message);
+    ls.style.display='none';
+  }
+}
+
+function setLoad(p,t){document.getElementById('loadBar').style.width=p+'%';document.getElementById('loadTxt').textContent=t;}
+
+// ── PLAYER SETUP ──────────────────────────────────────────────────────────────
+function setupPlayer(){
+  const m=session.meta;
+  document.getElementById('phSession').textContent=`${m.patient||'Unbekannt'} · ${m.recorded_at?new Date(m.recorded_at).toLocaleDateString('de-AT'):'—'}`;
+  const b=document.getElementById('phBadge');
+  b.textContent=m.has_stereo?'STEREO 3D':'2D';
+  b.className='ph-badge '+(m.has_stereo?'stereo':'mono');
+  document.getElementById('info-frames').textContent=m.frame_count||session.frames.length;
+  document.getElementById('info-dur').textContent=(m.duration_s||0).toFixed(1);
+  document.getElementById('info-fps').textContent=m.fps_target||10;
+  document.getElementById('info-pat').textContent=m.patient||'—';
+  const bar=document.getElementById('tlBar');
+  bar.addEventListener('click',e=>{
+    const r=bar.getBoundingClientRect(),p=(e.clientX-r.left)/r.width;
+    goToFrame(Math.round(p*(session.frames.length-1)));
+  });
+  bar.addEventListener('mousemove',e=>{
+    if(e.buttons!==1)return;
+    const r=bar.getBoundingClientRect(),p=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    goToFrame(Math.round(p*(session.frames.length-1)));
+  });
+  updateLabels();
+}
+
+// ── FRAME ANZEIGEN ────────────────────────────────────────────────────────────
+function showFrame(idx){
+  if(!session)return;
+  curFrame=Math.max(0,Math.min(session.frames.length-1,idx));
+  const fr=session.frames[curFrame];
+  const pct=session.frames.length>1?curFrame/(session.frames.length-1):0;
+  document.getElementById('tlFill').style.width=(pct*100)+'%';
+  document.getElementById('tlThumb').style.left=(pct*100)+'%';
+  const t0=session.frames[0].timestamp, tN=session.frames[session.frames.length-1].timestamp;
+  const t=fr.timestamp-t0, T=tN-t0;
+  document.getElementById('tlTime').textContent=`${t.toFixed(1)}s / ${T.toFixed(1)}s`;
+  document.getElementById('frameInfo').textContent=`Frame ${curFrame+1} / ${session.frames.length}`;
+  updateMeasurements(fr.measurements||{});
+  update3D(fr);
+}
+
+// ── 3D SZENE ─────────────────────────────────────────────────────────────────
+function clear3D(){
+  [cloudObj,skelObj,axisObj,lotObj,spineObj,...segObjs].forEach(o=>{if(o)scene.remove(o);});
+  segObjs=[];
+}
+
+function update3D(fr){
+  clear3D();
+  const p3=fr.pts3d||{}, p2=fr.pts2d||{};
+  const has3d=Object.keys(p3).length>3;
+
+  function v3(name){
+    if(p3[name]){const[x,y,z]=p3[name];return new THREE.Vector3(x,-y,-z);}
+    if(p2[name]){const[px,py]=p2[name];return new THREE.Vector3((px/1280-0.5)*2,-(py/720-0.5)*1.5,0);}
+    return null;
+  }
+
+  // Punktwolke
+  if(vis.cloud&&has3d){
+    const geo=new THREE.BufferGeometry();
+    const pos=[],col=[];
+    Object.values(p3).forEach(([x,y,z])=>{pos.push(x,-y,-z);col.push(0.24,0.43,0.31);});
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    cloudObj=new THREE.Points(geo,new THREE.PointsMaterial({size:0.022,vertexColors:true}));
+    scene.add(cloudObj);
+  }
+
+  // Skelett
+  if(vis.skel){
+    const CONNS=[['l_shoulder','r_shoulder'],['l_shoulder','l_elbow'],['l_elbow','l_wrist'],
+      ['r_shoulder','r_elbow'],['r_elbow','r_wrist'],['l_shoulder','l_hip'],['r_shoulder','r_hip'],
+      ['l_hip','r_hip'],['l_hip','l_knee'],['l_knee','l_ankle'],['r_hip','r_knee'],['r_knee','r_ankle'],
+      ['nose','l_ear'],['nose','r_ear']];
+    const verts=[];
+    CONNS.forEach(([a,b])=>{const pa=v3(a),pb=v3(b);if(pa&&pb)verts.push(pa.x,pa.y,pa.z,pb.x,pb.y,pb.z);});
+    if(verts.length){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+      skelObj=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x3d6b50,linewidth:2}));
+      scene.add(skelObj);
+    }
+    // Kugeln
+    Object.keys(p3).forEach(name=>{
+      const p=v3(name); if(!p)return;
+      const m=new THREE.Mesh(new THREE.SphereGeometry(0.012,6,6),new THREE.MeshBasicMaterial({color:0x3d6b50}));
+      m.position.copy(p); scene.add(m); segObjs.push(m);
+    });
+  }
+
+  // Achsenlinien
+  if(vis.axis){
+    const pairs=[[v3('l_shoulder'),v3('r_shoulder'),0x3060a0],[v3('l_hip'),v3('r_hip'),0x7a6ab0],[v3('l_knee'),v3('r_knee'),0x5a8a6a]];
+    const verts=[];
+    pairs.forEach(([a,b])=>{if(a&&b)verts.push(a.x,a.y,a.z,b.x,b.y,b.z);});
+    if(verts.length){
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+      axisObj=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x3060a0}));
+      scene.add(axisObj);
+    }
+  }
+
+  // Körperlot
+  if(vis.lot){
+    const nose=v3('nose'),ankle=v3('l_ankle')||v3('r_ankle');
+    if(nose&&ankle){
+      const cx=(nose.x+ankle.x)/2;
+      const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(cx,nose.y+0.1,0),new THREE.Vector3(cx,ankle.y-0.1,0)]);
+      lotObj=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xb87030}));
+      scene.add(lotObj);
+    }
+  }
+
+  // Wirbelsäule
+  if(vis.spine){
+    const pts=['nose','l_shoulder','l_hip','l_knee'].map(v3).filter(Boolean);
+    if(pts.length>=2){
+      const curve=new THREE.CatmullRomCurve3(pts);
+      const geo=new THREE.BufferGeometry().setFromPoints(curve.getPoints(40));
+      spineObj=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xa04848}));
+      scene.add(spineObj);
+    }
+  }
+
+  // Auto-center beim ersten Frame
+  if(curFrame===0&&has3d){
+    const all=Object.values(p3);
+    const cx=all.reduce((s,p)=>s+p[0],0)/all.length;
+    const cy=-all.reduce((s,p)=>s+p[1],0)/all.length;
+    target.set(cx,cy,0); updateCamera();
+  }
+}
+
+// ── MESSWERTE ─────────────────────────────────────────────────────────────────
+function updateMeasurements(m){
+  const h=m.height;
+  document.getElementById('val-height').textContent=h?h.toFixed(1)+' cm':'—';
+  document.getElementById('val-height-mode').textContent=m.has_stereo?'Stereo 3D · ±5mm':'2D Schätzung · ±20mm';
+
+  ['shoulder_w','hip_w','arm_l','arm_r','thigh_l','thigh_r','shin_l','shin_r','torso'].forEach(k=>{
+    const el=document.getElementById('val-'+k);if(!el)return;
+    el.textContent=m[k]!=null?m[k].toFixed(1)+' cm':'—';
+    el.className=m[k]!=null?'mc-val':'mc-val na';
+  });
+  ['shoulder_ang','hip_ang','hws','bws','lws'].forEach(k=>{
+    const el=document.getElementById('val-'+k);if(!el)return;
+    el.textContent=m[k]!=null?m[k].toFixed(1)+'°':'—';
+    el.className=m[k]!=null?'mc-val':'mc-val na';
+  });
+  ['circ_chest','circ_hip'].forEach(k=>{
+    const el=document.getElementById('val-'+k);if(!el)return;
+    el.textContent=m[k]!=null?m[k].toFixed(1)+' cm':'—';
+    el.className=m[k]!=null?'mc-val':'mc-val na';
+  });
+  setAsym('arm',m.arm_l,m.arm_r);
+  setAsym('thigh',m.thigh_l,m.thigh_r);
+  setAsym('shin',m.shin_l,m.shin_r);
+
+  document.getElementById('sec-lengths').style.display=vis.lengths?'':'none';
+  document.getElementById('sec-anglesp').style.display=vis.anglesp?'':'none';
+  document.getElementById('sec-circ').style.display=vis.circ?'':'none';
+  document.getElementById('sec-asym').style.display=vis.asym?'':'none';
+}
+
+function setAsym(k,l,r){
+  if(l==null||r==null)return;
+  const tot=l+r||1;
+  document.getElementById(`asym-${k}-l`).style.width=(l/tot*100)+'%';
+  document.getElementById(`asym-${k}-r`).style.width=(r/tot*100)+'%';
+  const diff=Math.abs(l-r);
+  const el=document.getElementById(`asym-${k}-v`);
+  el.textContent=diff.toFixed(1)+'cm';
+  el.style.color=diff/Math.max(l,r)>0.05?'var(--danger)':'var(--g2)';
+}
+
+// ── PLAYBACK ──────────────────────────────────────────────────────────────────
+function togglePlay(){
+  playing=!playing;
+  const btn=document.getElementById('playBtn');
+  btn.textContent=playing?'⏸':'▶';
+  btn.className=playing?'tl-btn':'tl-btn play';
+  playing?startPlay():stopPlay();
+}
+function startPlay(){
+  stopPlay();
+  const fps=session.meta.fps_target||10;
+  playInterval=setInterval(()=>{
+    if(curFrame>=session.frames.length-1)goToFrame(0);
+    else showFrame(curFrame+1);
+  },(1000/fps)/speed);
+}
+function stopPlay(){if(playInterval){clearInterval(playInterval);playInterval=null;}}
+function skipFrames(n){stopPlay();playing=false;document.getElementById('playBtn').textContent='▶';document.getElementById('playBtn').className='tl-btn play';goToFrame(curFrame+n);}
+function goToFrame(i){showFrame(Math.max(0,Math.min((session?.frames.length||1)-1,i)));}
+function setSpeed(s,btn){speed=s;document.querySelectorAll('.spd').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(playing){stopPlay();startPlay();}}
+
+// ── TOGGLES ───────────────────────────────────────────────────────────────────
+function updateVis(){
+  ['cloud','skel','axis','lot','seg','spine','angles','lengths','anglesp','circ','asym'].forEach(k=>{
+    const el=document.getElementById('t-'+k);if(el)vis[k]=el.checked;
+  });
+  if(cloudObj)cloudObj.visible=vis.cloud;
+  if(skelObj) skelObj.visible=vis.skel;
+  if(axisObj) axisObj.visible=vis.axis;
+  if(lotObj)  lotObj.visible=vis.lot;
+  if(spineObj)spineObj.visible=vis.spine;
+  if(session) updateMeasurements(session.frames[curFrame]?.measurements||{});
+}
+
+// ── SPRACHE ───────────────────────────────────────────────────────────────────
+function toggleLang(){lang=lang==='de'?'en':'de';updateLabels();if(session)updateMeasurements(session.frames[curFrame]?.measurements||{});}
+function updateLabels(){
+  const t=L[lang];
+  const m={'lbl-view':'view','lbl-cloud':'cloud','lbl-skel':'skel','lbl-axis':'axis','lbl-lot':'lot',
+    'lbl-seg':'seg','lbl-spine':'spine','lbl-angles':'angles','lbl-lengths':'lengths',
+    'lbl-angles-t':'angles-t','lbl-circ':'circ','lbl-asym':'asym',
+    'lbl-sec-lengths':'sec-lengths','lbl-sec-angles':'sec-angles','lbl-sec-circ':'sec-circ','lbl-sec-asym':'sec-asym',
+    'lbl-height':'height','lbl-shoulder_w':'shoulder_w','lbl-hip_w':'hip_w','lbl-arm_l':'arm_l','lbl-arm_r':'arm_r',
+    'lbl-thigh_l':'thigh_l','lbl-thigh_r':'thigh_r','lbl-shin_l':'shin_l','lbl-shin_r':'shin_r','lbl-torso':'torso',
+    'lbl-shoulder_ang':'shoulder_ang','lbl-hip_ang':'hip_ang','lbl-hws':'hws','lbl-bws':'bws','lbl-lws':'lws',
+    'lbl-circ_chest':'circ_chest','lbl-circ_hip':'circ_hip',
+    'asym-lbl-arm':'arm','asym-lbl-thigh':'thigh','asym-lbl-shin':'shin','lbl-meas-toggle':'meas-toggle',};
+  Object.entries(m).forEach(([id,k])=>{const el=document.getElementById(id);if(el&&t[k])el.textContent=t[k];});
+}
+
+// ── SCHLIESSEN ────────────────────────────────────────────────────────────────
+function closeSession(){
+  stopPlay();session=null;curFrame=0;
+  if(cloudObj)scene.remove(cloudObj);if(skelObj)scene.remove(skelObj);
+  if(axisObj)scene.remove(axisObj);if(lotObj)scene.remove(lotObj);
+  if(spineObj)scene.remove(spineObj);segObjs.forEach(o=>scene.remove(o));segObjs=[];
+  document.getElementById('emptyState').style.display='flex';
+  document.getElementById('frameInfo').style.display='none';
+  document.getElementById('viewHint').style.display='none';
+  document.getElementById('phBadge').style.display='none';
+  document.getElementById('closeBtn').style.display='none';
+  document.getElementById('phSession').textContent='Keine Session geladen';
+}
+
+// ── DATEI ─────────────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadSession(f);});
+
+// Drag & Drop über das gesamte Fenster
+window.addEventListener('dragover',e=>{e.preventDefault();document.getElementById('dropOverlay').style.display='flex';});
+window.addEventListener('dragleave',e=>{if(e.relatedTarget===null)document.getElementById('dropOverlay').style.display='none';});
+window.addEventListener('drop',e=>{
+  e.preventDefault();
+  document.getElementById('dropOverlay').style.display='none';
+  const f=e.dataTransfer.files[0];if(f)loadSession(f);
+});
+
+window.addEventListener('keydown',e=>{
+  if(!session)return;
+  if(e.key===' '){e.preventDefault();togglePlay();}
+  if(e.key==='ArrowRight')skipFrames(1);
+  if(e.key==='ArrowLeft') skipFrames(-1);
+  if(e.key==='ArrowUp')   skipFrames(10);
+  if(e.key==='ArrowDown') skipFrames(-10);
+  if(e.key==='l'||e.key==='L')toggleLang();
+});
+
+updateLabels();
+// Three.js sofort initialisieren
+window.addEventListener('load', () => initThree());
+</script>
+<input type="file" id="fileInput" accept=".anthro3d,.zip">
+</body>
+</html>

@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANTHRO3D — Live Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f2f5f3;--surface:#fff;--border:#dde8e0;
+  --g1:#2d5a3d;--g2:#4a7a5a;--g3:#6a9a7a;--g4:#b8d8c0;--g5:#eaf3ec;
+  --text:#1a2e20;--dim:#5a7a60;--muted:#9ab8a0;
+  --red:#c04040;--yellow:#c08020;--blue:#3060a0;
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;}
+
+/* HEADER */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:20px;color:var(--g1);}
+.status-pill{display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:10px;border:1px solid var(--border);color:var(--muted);background:var(--bg);}
+.status-pill.live{border-color:rgba(74,122,90,0.4);background:var(--g5);color:var(--g2);}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+.status-dot.live{background:var(--g2);animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.fps-badge{font-size:10px;color:var(--dim);padding:3px 10px;border-radius:20px;background:var(--bg);border:1px solid var(--border);}
+.lang-btn{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--dim);font-size:10px;cursor:pointer;font-family:'Inter',sans-serif;}
+.lang-btn:hover{border-color:var(--g2);color:var(--g1);}
+
+/* LAYOUT */
+.app{display:grid;grid-template-columns:220px 1fr 280px;gap:0;height:calc(100vh - 57px);}
+
+/* LEFT SIDEBAR — Toggle Controls */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;}
+.sidebar-title{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em;margin-bottom:10px;margin-top:8px;}
+.sidebar-title:first-child{margin-top:0;}
+.toggle-item{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);}
+.toggle-item:last-child{border:none;}
+.toggle-label{font-size:11px;color:var(--text);display:flex;align-items:center;gap:6px;}
+.toggle-dot{width:6px;height:6px;border-radius:50%;}
+.toggle{position:relative;width:32px;height:18px;flex-shrink:0;}
+.toggle input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:#ddd;border-radius:9px;cursor:pointer;transition:0.2s;}
+.toggle input:checked+.toggle-slider{background:var(--g2);}
+.toggle-slider:before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:#fff;border-radius:50%;transition:0.2s;}
+.toggle input:checked+.toggle-slider:before{transform:translateX(14px);}
+
+/* CENTER — Body Visualization */
+.center{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+.view-tabs{display:flex;gap:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.vtab{padding:5px 16px;border-radius:6px;font-size:11px;cursor:pointer;color:var(--dim);border:1px solid transparent;transition:all 0.15s;}
+.vtab.active{background:var(--g5);border-color:var(--g4);color:var(--g1);font-weight:500;}
+.body-view{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+.body-canvas-wrap{position:relative;}
+canvas#bodyCanvas{display:block;}
+
+/* Measurement overlays on canvas */
+.m-label{position:absolute;font-size:9px;font-weight:500;background:rgba(255,255,255,0.92);border:1px solid var(--border);border-radius:4px;padding:1px 6px;pointer-events:none;white-space:nowrap;color:var(--g1);}
+.m-label.warn{border-color:rgba(192,64,64,0.3);color:var(--red);}
+.m-label.angle{color:var(--blue);}
+
+/* No data state */
+.no-data{text-align:center;color:var(--muted);}
+.no-data-icon{font-size:48px;margin-bottom:12px;opacity:0.4;}
+.no-data-title{font-size:16px;font-weight:600;color:var(--dim);margin-bottom:6px;}
+.no-data-sub{font-size:11px;line-height:1.7;}
+
+/* RIGHT PANEL — Measurements */
+.right-panel{border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;}
+.panel-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+.panel-section-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.meas-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.meas-card{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;transition:all 0.3s;}
+.meas-card.highlight{border-color:var(--g4);background:var(--g5);}
+.meas-card.warn{border-color:rgba(192,64,64,0.3);background:#fef5f5;}
+.meas-label{font-size:9px;color:var(--muted);margin-bottom:2px;}
+.meas-val{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--g1);}
+.meas-val.na{color:var(--muted);font-size:11px;font-weight:400;}
+.meas-sub{font-size:8px;color:var(--muted);margin-top:1px;}
+
+/* Asymmetry bars */
+.asym-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.asym-name{font-size:10px;color:var(--dim);width:80px;flex-shrink:0;}
+.asym-bars{flex:1;display:flex;align-items:center;gap:2px;}
+.asym-l{height:5px;border-radius:2px;background:var(--g2);transition:width 0.4s;}
+.asym-r{height:5px;border-radius:2px;background:var(--blue);transition:width 0.4s;}
+.asym-mid{width:1px;height:9px;background:var(--border);flex-shrink:0;}
+.asym-val{font-size:9px;color:var(--dim);width:32px;text-align:right;}
+
+/* Spine viz */
+.spine-viz{display:flex;gap:8px;align-items:flex-start;padding:8px 0;}
+.spine-bar{width:6px;background:var(--border);border-radius:3px;position:relative;overflow:hidden;height:120px;}
+.spine-fill{position:absolute;bottom:0;width:100%;border-radius:3px;transition:height 0.4s;}
+.spine-lbl{font-size:9px;color:var(--muted);text-align:center;}
+
+/* Axis deviation table */
+.axis-table{width:100%;border-collapse:collapse;font-size:10px;}
+.axis-table th{font-size:9px;color:var(--muted);padding:3px 6px;text-align:left;border-bottom:1px solid var(--border);font-weight:400;}
+.axis-table td{padding:4px 6px;border-bottom:1px solid rgba(221,232,224,0.5);}
+.axis-table tr:last-child td{border:none;}
+.axis-l{color:var(--g2);font-weight:500;}
+.axis-r{color:var(--blue);font-weight:500;}
+.axis-diff{font-weight:600;}
+.axis-diff.ok{color:var(--g2);}
+.axis-diff.warn{color:var(--red);}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ANTHRO3D</div>
+  <div class="status-pill" id="statusPill">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusTxt">Verbinde...</span>
+  </div>
+  <div class="header-right">
+    <div class="fps-badge" id="fpsBadge">— fps</div>
+    <button class="lang-btn" onclick="toggleLang()">DE / EN</button>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- LEFT: Toggle Controls -->
+  <div class="sidebar">
+    <div class="sidebar-title">Ansicht</div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#4a7a5a"></div>Skelett</span>
+      <label class="toggle"><input type="checkbox" id="t-skel" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#3060a0"></div>Achsenlinien</span>
+      <label class="toggle"><input type="checkbox" id="t-axis" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#c08020"></div>Körperlot</span>
+      <label class="toggle"><input type="checkbox" id="t-lot" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#6a9a7a"></div>Segmentlängen</span>
+      <label class="toggle"><input type="checkbox" id="t-seg" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#a060a0"></div>Winkelangaben</span>
+      <label class="toggle"><input type="checkbox" id="t-ang" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label"><div class="toggle-dot" style="background:#c04040"></div>Wirbelsäule</span>
+      <label class="toggle"><input type="checkbox" id="t-spine" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+
+    <div class="sidebar-title">Messungen</div>
+    <div class="toggle-item">
+      <span class="toggle-label">Längen</span>
+      <label class="toggle"><input type="checkbox" id="t-lengths" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label">Winkel</span>
+      <label class="toggle"><input type="checkbox" id="t-angles" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label">Umfänge</span>
+      <label class="toggle"><input type="checkbox" id="t-circ" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label">Asymmetrie</span>
+      <label class="toggle"><input type="checkbox" id="t-asym" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+    <div class="toggle-item">
+      <span class="toggle-label">Achsenabweichung</span>
+      <label class="toggle"><input type="checkbox" id="t-axdev" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+    </div>
+
+    <div class="sidebar-title">Qualität</div>
+    <div class="toggle-item">
+      <span class="toggle-label" style="display:flex;flex-direction:column;gap:1px;">
+        <span>Kalman-Filter</span>
+        <span style="font-size:9px;color:var(--muted);">Glättet Keypoints</span>
+      </span>
+      <label class="toggle"><input type="checkbox" id="t-kalman" onchange="toggleKalman()"><div class="toggle-slider"></div></label>
+    </div>
+    <div style="font-size:10px;color:var(--dim);line-height:1.8;padding:4px 0;margin-top:6px;">
+      Modus: <span id="modeVal" style="color:var(--g1);font-weight:500">—</span><br>
+      Punkte: <span id="ptsVal">—</span><br>
+      Stereo: <span id="stereoVal">—</span><br>
+      Kalman: <span id="kalmanVal" style="color:var(--muted)">AUS</span>
+    </div>
+
+    <div class="sidebar-title">Kamera</div>
+    <div style="font-size:9px;color:var(--muted);margin-bottom:6px;">Aktive Kamera für Videobild</div>
+    <div id="camList" style="display:flex;flex-direction:column;gap:4px;"></div>
+    <button onclick="refreshCams()" style="margin-top:6px;width:100%;padding:5px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--dim);font-size:10px;cursor:pointer;font-family:'Inter',sans-serif;">↺ Kameras aktualisieren</button>
+  </div>
+
+  <!-- CENTER: Body Visualization -->
+  <div class="center">
+    <div class="view-tabs">
+      <div class="vtab active" onclick="setView('front',this)">Frontal</div>
+      <div class="vtab" onclick="setView('side',this)">Seitlich</div>
+      <div class="vtab" onclick="setView('back',this)">Dorsal</div>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <div style="font-size:9px;color:var(--muted);letter-spacing:0.08em;" id="viewModeLabel">NORMAL</div>
+        <div onclick="toggleViewMode()" title="Ansichtsmodus wechseln"
+          style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;cursor:pointer;">
+          <div id="vbtn-normal" style="padding:4px 10px;font-size:10px;font-weight:500;background:var(--g5);color:var(--g1);border-right:1px solid var(--border);transition:all 0.15s;">Normal</div>
+          <div id="vbtn-clinical" style="padding:4px 10px;font-size:10px;color:var(--muted);transition:all 0.15s;">Klinisch</div>
+        </div>
+      </div>
+    </div>
+    <div class="body-view" style="position:relative;background:#1a2018;">
+      <div id="noData" class="no-data" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">
+        <div class="no-data-icon">🏃</div>
+        <div class="no-data-title">Warte auf Scan</div>
+        <div class="no-data-sub">
+          pose_detector.py starten:<br>
+          <code style="background:var(--bg);padding:3px 8px;border-radius:4px;font-size:10px;">python3 pose_detector.py</code><br><br>
+          WebSocket: ws://localhost:8767
+        </div>
+      </div>
+
+      <!-- Video-Hintergrund (Kamerabild) -->
+      <video id="liveVid" autoplay playsinline muted
+        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:none;"></video>
+
+      <!-- Overlay-Canvas für Skelett + Achsen (transparent) -->
+      <div class="body-canvas-wrap" id="canvasWrap" style="display:none;position:absolute;inset:0;">
+        <canvas id="bodyCanvas" style="width:100%;height:100%;"></canvas>
+      </div>
+
+      <!-- Klinischer Modus — eigener Canvas über Video -->
+      <canvas id="clinicalCanvas"
+        style="position:absolute;inset:0;width:100%;height:100%;display:none;"></canvas>
+
+      <!-- ── Aufnahme-Leiste (halbtransparent, unten) ── -->
+      <div id="recBar" style="
+        position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+        display:flex;align-items:center;gap:14px;
+        background:rgba(255,255,255,0.78);
+        backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+        border:1px solid rgba(212,224,214,0.8);
+        border-radius:40px;padding:8px 20px;
+        box-shadow:0 4px 24px rgba(45,90,61,0.12);
+        transition:all 0.3s;">
+
+        <!-- REC Punkt -->
+        <div id="recDot" style="width:11px;height:11px;border-radius:50%;background:var(--muted);transition:all 0.3s;flex-shrink:0;"></div>
+
+        <!-- Aufnahme Button -->
+        <button id="recBtn" onclick="toggleRec()" style="
+          padding:7px 20px;border-radius:20px;border:none;
+          background:var(--g1);color:#fff;font-family:'Inter',sans-serif;
+          font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;
+          letter-spacing:0.03em;">
+          ● Aufnahme starten
+        </button>
+
+        <!-- Timer -->
+        <div id="recTime" style="font-size:12px;font-weight:600;color:var(--g1);font-family:'Syne',sans-serif;min-width:38px;display:none;">0:00</div>
+
+        <!-- Divider -->
+        <div style="width:1px;height:20px;background:var(--border);"></div>
+
+        <!-- Snapshot Button -->
+        <button onclick="takeSnapshot()" style="
+          padding:7px 16px;border-radius:20px;border:1px solid var(--border);
+          background:transparent;color:var(--dim);font-family:'Inter',sans-serif;
+          font-size:11px;cursor:pointer;transition:all 0.2s;" title="Einzelbild speichern">
+          📸 Snapshot
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Measurements Panel -->
+  <div class="right-panel">
+
+    <!-- Körpergröße prominent -->
+    <div class="panel-section">
+      <div style="text-align:center;padding:8px 0;">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;" id="lbl-height">Körpergröße</div>
+        <div style="font-family:'Syne',sans-serif;font-size:36px;font-weight:800;color:var(--g1);" id="val-height">—</div>
+        <div style="font-size:10px;color:var(--muted);" id="val-height-mode">Warte auf Daten...</div>
+      </div>
+    </div>
+
+    <!-- Längen -->
+    <div class="panel-section" id="sec-lengths">
+      <div class="panel-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📐 <span id="lbl-lengths">Segmentlängen</span></span>
+        <label class="toggle" style="margin:0;"><input type="checkbox" id="t-lengths" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+      </div>
+      <div class="meas-grid" id="grid-lengths">
+        <div class="meas-card" id="mc-shoulder_w"><div class="meas-label" id="lbl-shoulder_w">Schulterbreite</div><div class="meas-val na" id="val-shoulder_w">—</div></div>
+        <div class="meas-card" id="mc-hip_w"><div class="meas-label" id="lbl-hip_w">Hüftbreite</div><div class="meas-val na" id="val-hip_w">—</div></div>
+        <div class="meas-card" id="mc-arm_l"><div class="meas-label" id="lbl-arm_l">Oberarm L</div><div class="meas-val na" id="val-arm_l">—</div></div>
+        <div class="meas-card" id="mc-arm_r"><div class="meas-label" id="lbl-arm_r">Oberarm R</div><div class="meas-val na" id="val-arm_r">—</div></div>
+        <div class="meas-card" id="mc-forearm_l"><div class="meas-label" id="lbl-forearm_l">Unterarm L</div><div class="meas-val na" id="val-forearm_l">—</div></div>
+        <div class="meas-card" id="mc-forearm_r"><div class="meas-label" id="lbl-forearm_r">Unterarm R</div><div class="meas-val na" id="val-forearm_r">—</div></div>
+        <div class="meas-card" id="mc-thigh_l"><div class="meas-label" id="lbl-thigh_l">Oberschenkel L</div><div class="meas-val na" id="val-thigh_l">—</div></div>
+        <div class="meas-card" id="mc-thigh_r"><div class="meas-label" id="lbl-thigh_r">Oberschenkel R</div><div class="meas-val na" id="val-thigh_r">—</div></div>
+        <div class="meas-card" id="mc-shin_l"><div class="meas-label" id="lbl-shin_l">Unterschenkel L</div><div class="meas-val na" id="val-shin_l">—</div></div>
+        <div class="meas-card" id="mc-shin_r"><div class="meas-label" id="lbl-shin_r">Unterschenkel R</div><div class="meas-val na" id="val-shin_r">—</div></div>
+        <div class="meas-card" id="mc-torso"><div class="meas-label" id="lbl-torso">Rumpflänge</div><div class="meas-val na" id="val-torso">—</div></div>
+      </div>
+    </div>
+
+    <!-- Winkel -->
+    <div class="panel-section" id="sec-angles">
+      <div class="panel-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📐 <span id="lbl-angles-title">Achsenwinkel</span></span>
+        <label class="toggle" style="margin:0;"><input type="checkbox" id="t-angles" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+      </div>
+      <div class="meas-grid" id="grid-angles">
+        <div class="meas-card"><div class="meas-label" id="lbl-shoulder_ang">Schulterachse</div><div class="meas-val na" id="val-shoulder_ang">—</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-hip_ang">Beckenachse</div><div class="meas-val na" id="val-hip_ang">—</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-knee_ang">Knieachse</div><div class="meas-val na" id="val-knee_ang">—</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-hws">HWS</div><div class="meas-val na" id="val-hws">—</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-bws">BWS</div><div class="meas-val na" id="val-bws">—</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-lws">LWS</div><div class="meas-val na" id="val-lws">—</div></div>
+      </div>
+    </div>
+
+    <!-- Umfänge -->
+    <div class="panel-section" id="sec-circ">
+      <div class="panel-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>⭕ <span id="lbl-circ-title">Umfänge</span></span>
+        <label class="toggle" style="margin:0;"><input type="checkbox" id="t-circ" checked onchange="updateVis()"><div class="toggle-slider"></div></label>
+      </div>
+      <div class="meas-grid" id="grid-circ">
+        <div class="meas-card"><div class="meas-label" id="lbl-circ_chest">Brust</div><div class="meas-val na" id="val-circ_chest">—</div><div class="meas-sub">Ellipsenmodell</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-circ_waist">Taille</div><div class="meas-val na" id="val-circ_waist">—</div><div class="meas-sub">Ellipsenmodell</div></div>
+        <div class="meas-card"><div class="meas-label" id="lbl-circ_hip">Hüfte</div><div class="meas-val na" id="val-circ_hip">—</div><div class="meas-sub">Ellipsenmodell</div></div>
+      </div>
+    </div>
+
+    <!-- Asymmetrie -->
+    <div class="panel-section" id="sec-asym">
+      <div class="panel-section-title">⚖️ <span id="lbl-asym-title">Asymmetrie L/R</span></div>
+      <div id="asym-rows">
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-arm">Oberarm</div><div class="asym-bars"><div class="asym-l" id="asym-arm-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-arm-r" style="width:50%"></div></div><div class="asym-val" id="asym-arm-v">—</div></div>
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-thigh">Oberschenkel</div><div class="asym-bars"><div class="asym-l" id="asym-thigh-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-thigh-r" style="width:50%"></div></div><div class="asym-val" id="asym-thigh-v">—</div></div>
+        <div class="asym-row"><div class="asym-name" id="asym-lbl-shin">Unterschenkel</div><div class="asym-bars"><div class="asym-l" id="asym-shin-l" style="width:50%"></div><div class="asym-mid"></div><div class="asym-r" id="asym-shin-r" style="width:50%"></div></div><div class="asym-val" id="asym-shin-v">—</div></div>
+        <div style="margin-top:5px;display:flex;gap:10px;font-size:9px;color:var(--muted)">
+          <span><span style="color:var(--g2)">■</span> Links</span>
+          <span><span style="color:var(--blue)">■</span> Rechts</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Achsenabweichung -->
+    <div class="panel-section" id="sec-axdev">
+      <div class="panel-section-title">📏 <span id="lbl-axdev-title">Achsenabweichung vom Körperlot</span></div>
+      <table class="axis-table">
+        <thead><tr><th>Bereich</th><th class="axis-l">Links</th><th class="axis-r">Rechts</th><th>Δ</th></tr></thead>
+        <tbody>
+          <tr><td id="ax-lbl-shoulder">Schulter</td><td class="axis-l" id="ax-sl">—</td><td class="axis-r" id="ax-sr">—</td><td class="axis-diff" id="ax-sd">—</td></tr>
+          <tr><td id="ax-lbl-hip">Becken</td><td class="axis-l" id="ax-hl">—</td><td class="axis-r" id="ax-hr">—</td><td class="axis-diff" id="ax-hd">—</td></tr>
+          <tr><td id="ax-lbl-knee">Knie</td><td class="axis-l" id="ax-kl">—</td><td class="axis-r" id="ax-kr">—</td><td class="axis-diff" id="ax-kd">—</td></tr>
+          <tr><td id="ax-lbl-ankle">Knöchel</td><td class="axis-l" id="ax-al">—</td><td class="axis-r" id="ax-ar">—</td><td class="axis-diff" id="ax-ad">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let ws = null, data = null, view = 'front', lang = 'de';
+let vis = {skel:true,axis:true,lot:true,seg:true,ang:true,spine:true,
+           lengths:true,angles:true,circ:true,asym:true,axdev:true};
+
+const LABELS = {
+  de: {
+    height:'Körpergröße',shoulder_w:'Schulterbreite',hip_w:'Hüftbreite',
+    arm_l:'Oberarm L',arm_r:'Oberarm R',forearm_l:'Unterarm L',forearm_r:'Unterarm R',
+    thigh_l:'Oberschenkel L',thigh_r:'Oberschenkel R',shin_l:'Unterschenkel L',shin_r:'Unterschenkel R',
+    torso:'Rumpflänge',shoulder_ang:'Schulterachse',hip_ang:'Beckenachse',knee_ang:'Knieachse',
+    hws:'HWS',bws:'BWS',lws:'LWS',
+    circ_chest:'Brust',circ_waist:'Taille',circ_hip:'Hüfte',
+    lengths:'Segmentlängen',angles:'Achsenwinkel',circ:'Umfänge',asym:'Asymmetrie L/R',
+    axdev:'Achsenabweichung vom Körperlot',
+    shoulder:'Schulter',hip:'Becken',knee:'Knie',ankle:'Knöchel',
+    arm:'Oberarm',thigh:'Oberschenkel',shin:'Unterschenkel',
+  },
+  en: {
+    height:'Body Height',shoulder_w:'Shoulder Width',hip_w:'Hip Width',
+    arm_l:'Upper Arm L',arm_r:'Upper Arm R',forearm_l:'Forearm L',forearm_r:'Forearm R',
+    thigh_l:'Thigh L',thigh_r:'Thigh R',shin_l:'Shin L',shin_r:'Shin R',
+    torso:'Torso',shoulder_ang:'Shoulder Axis',hip_ang:'Pelvis Axis',knee_ang:'Knee Axis',
+    hws:'Cervical',bws:'Thoracic',lws:'Lumbar',
+    circ_chest:'Chest',circ_waist:'Waist',circ_hip:'Hip',
+    lengths:'Segment Lengths',angles:'Axis Angles',circ:'Circumferences',asym:'Asymmetry L/R',
+    axdev:'Axis Deviation from Plumb',
+    shoulder:'Shoulder',hip:'Pelvis',knee:'Knee',ankle:'Ankle',
+    arm:'Upper Arm',thigh:'Thigh',shin:'Shin',
+  }
+};
+
+// ── KAMERA ────────────────────────────────────────────────────────────────────
+let camStream = null;
+
+// ── KAMERA-UMSCHALTER ─────────────────────────────────────────────────────────
+let activeCamId = null;
+
+async function refreshCams() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams    = devices.filter(d => d.kind === 'videoinput');
+    const list    = document.getElementById('camList');
+    if (!list) return;
+    list.innerHTML = '';
+    cams.forEach((cam, i) => {
+      const label    = cam.label || `Kamera ${i}`;
+      const isActive = cam.deviceId === activeCamId;
+      const btn = document.createElement('div');
+      btn.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;border:1px solid ${isActive?'var(--g2)':'var(--border)'};background:${isActive?'var(--g5)':'var(--bg)'};cursor:pointer;transition:all 0.15s;`;
+      btn.innerHTML = `
+        <div style="width:7px;height:7px;border-radius:50%;background:${isActive?'var(--g2)':'var(--muted)'};flex-shrink:0;"></div>
+        <span style="font-size:10px;color:${isActive?'var(--g1)':'var(--dim)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${label}">${label}</span>
+        ${isActive?'<span style="font-size:9px;color:var(--g2);">✓</span>':''}
+      `;
+      btn.onclick = () => switchCamera(cam.deviceId);
+      list.appendChild(btn);
+    });
+  } catch(e) { console.log('Kamera-Liste:', e); }
+}
+
+async function switchCamera(deviceId) {
+  const vid = document.getElementById('liveVid');
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId }, width:1920, height:1080 }, audio:false });
+    vid.srcObject  = camStream;
+    vid.style.display = 'block';
+    activeCamId    = deviceId;
+    vid.onloadedmetadata = () => renderClinical();
+    refreshCams();
+  } catch(e) { console.log('Kamera-Fehler:', e); }
+}
+
+async function startCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { width:1280, height:720 }, audio:false });
+    const vid = document.getElementById('liveVid');
+    vid.srcObject = camStream;
+    vid.style.display = 'block';
+    // Aktive Kamera-ID speichern
+    const track = camStream.getVideoTracks()[0];
+    activeCamId = track?.getSettings()?.deviceId || null;
+    vid.onloadedmetadata = () => { renderClinical(); };
+    // Kameraliste laden (braucht erst getUserMedia für Labels)
+    setTimeout(refreshCams, 500);
+  } catch(e) {
+    console.log('Kamera nicht verfügbar:', e.message);
+    refreshCams(); // Trotzdem Liste anzeigen
+  }
+}
+
+// Klinischer Modus — kontinuierlich rendern
+let clinAnimId = null;
+function renderClinical() {
+  const vid = document.getElementById('liveVid');
+  const cv  = document.getElementById('clinicalCanvas');
+  if (!vid || !cv) return;
+  const W = vid.videoWidth || 640, H = vid.videoHeight || 480;
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', {willReadFrequently:true});
+
+  function frame() {
+    clinAnimId = requestAnimationFrame(frame);
+    if (!vid.videoWidth) return;
+    if (viewMode === 0) { cv.style.display='none'; return; }
+    cv.style.display = 'block';
+    // Gespiegelt zeichnen
+    ctx.save(); ctx.translate(W,0); ctx.scale(-1,1);
+    ctx.drawImage(vid, 0, 0, W, H);
+    ctx.restore();
+    // Grauton-Rendering
+    const img = ctx.getImageData(0,0,W,H);
+    const d = img.data;
+    for (let i=0; i<d.length; i+=4) {
+      const lum = (d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)/255;
+      d[i]   = Math.round(CLINICAL_DARK[0]+lum*(CLINICAL_LIGHT[0]-CLINICAL_DARK[0]));
+      d[i+1] = Math.round(CLINICAL_DARK[1]+lum*(CLINICAL_LIGHT[1]-CLINICAL_DARK[1]));
+      d[i+2] = Math.round(CLINICAL_DARK[2]+lum*(CLINICAL_LIGHT[2]-CLINICAL_DARK[2]));
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  frame();
+}
+
+// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket('ws://localhost:8767');
+  ws.onopen = () => setStatus(true);
+  ws.onmessage = e => { try { data = JSON.parse(e.data); update(data); } catch(e){} };
+  ws.onclose = () => { setStatus(false); setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
+}
+
+function setStatus(ok) {
+  document.getElementById('statusPill').className = 'status-pill' + (ok?' live':'');
+  document.getElementById('statusDot').className  = 'status-dot'  + (ok?' live':'');
+  document.getElementById('statusTxt').textContent = ok ? 'Live' : 'Verbinde...';
+}
+
+// ── UPDATE DASHBOARD ──────────────────────────────────────────────────────────
+function update(d) {
+  document.getElementById('noData').style.display = 'none';
+  document.getElementById('liveVid').style.display = 'block';
+  document.getElementById('canvasWrap').style.display = 'block';
+
+  const L = LABELS[d.lang || lang];
+  document.getElementById('fpsBadge').textContent = `${d.fps||0} fps`;
+  document.getElementById('modeVal').textContent  = d.has_stereo ? 'Stereo 3D' : '2D';
+  document.getElementById('stereoVal').textContent = d.has_stereo ? '✓' : '—';
+  // Kalman-Status aus Python synchronisieren
+  if (d.kalman_enabled !== undefined) {
+    const chk = document.getElementById('t-kalman');
+    if (chk) chk.checked = d.kalman_enabled;
+    updateKalmanStatus(d.kalman_enabled);
+  }
+  const lmCount = Object.keys(d.landmarks_2d||{}).length;
+  document.getElementById('ptsVal').textContent = lmCount + '/17';
+
+  // Körpergröße
+  setVal('height', d.height, 'cm', L);
+  document.getElementById('val-height-mode').textContent =
+    d.has_stereo ? 'Stereo 3D • ±5mm' : '2D Schätzung • ±20mm';
+
+  // Längen
+  ['shoulder_w','hip_w','arm_l','arm_r','forearm_l','forearm_r',
+   'thigh_l','thigh_r','shin_l','shin_r','torso'].forEach(k => setVal(k, d[k], 'cm', L));
+
+  // Winkel
+  ['shoulder_ang','hip_ang','knee_ang','hws','bws','lws'].forEach(k => {
+    const el = document.getElementById('val-'+k);
+    if (!el) return;
+    el.textContent = d[k] != null ? `${d[k].toFixed(1)}°` : '—';
+    el.className   = d[k] != null ? 'meas-val' : 'meas-val na';
+  });
+
+  // Umfänge
+  ['circ_chest','circ_waist','circ_hip'].forEach(k => setVal(k, d[k], 'cm', L));
+
+  // Asymmetrie-Balken
+  setAsym('arm',   d.arm_l,   d.arm_r);
+  setAsym('thigh', d.thigh_l, d.thigh_r);
+  setAsym('shin',  d.shin_l,  d.shin_r);
+
+  // Achsenabweichung
+  setAxisDev('s', d.axis_shoulder_l, d.axis_shoulder_r);
+  setAxisDev('h', d.axis_hip_l,      d.axis_hip_r);
+  setAxisDev('k', d.axis_knee_l,     d.axis_knee_r);
+  setAxisDev('a', d.axis_ankle_l,    d.axis_ankle_r);
+
+  // Labels aktualisieren
+  updateLabels(L);
+
+  // Body Canvas zeichnen
+  drawBody(d);
+}
+
+function setVal(key, val, unit, L) {
+  const el  = document.getElementById('val-'+key);
+  const lbl = document.getElementById('lbl-'+key);
+  if (!el) return;
+  if (lbl && L[key]) lbl.textContent = L[key];
+  if (val != null) {
+    el.textContent = `${val.toFixed(1)} ${unit}`;
+    el.className   = 'meas-val';
+  } else {
+    el.textContent = '—';
+    el.className   = 'meas-val na';
+  }
+}
+
+function setAsym(key, l, r) {
+  if (l == null || r == null) return;
+  const tot = l + r;
+  const lEl = document.getElementById(`asym-${key}-l`);
+  const rEl = document.getElementById(`asym-${key}-r`);
+  const vEl = document.getElementById(`asym-${key}-v`);
+  if (!lEl) return;
+  lEl.style.width = `${l/tot*100}%`;
+  rEl.style.width = `${r/tot*100}%`;
+  const diff = Math.abs(l-r);
+  const pct  = Math.round(diff/Math.max(l,r)*100);
+  vEl.textContent = `${diff.toFixed(1)}cm`;
+  vEl.style.color = pct > 5 ? 'var(--red)' : 'var(--g2)';
+}
+
+function setAxisDev(prefix, l, r) {
+  const lEl = document.getElementById(`ax-${prefix}l`);
+  const rEl = document.getElementById(`ax-${prefix}r`);
+  const dEl = document.getElementById(`ax-${prefix}d`);
+  if (!lEl) return;
+  lEl.textContent = l != null ? `${l>0?'+':''}${l.toFixed(1)}cm` : '—';
+  rEl.textContent = r != null ? `${r>0?'+':''}${r.toFixed(1)}cm` : '—';
+  if (l != null && r != null) {
+    const diff = Math.abs(l - r);
+    dEl.textContent = `${diff.toFixed(1)}cm`;
+    dEl.className = diff > 2 ? 'axis-diff warn' : 'axis-diff ok';
+  }
+}
+
+function updateLabels(L) {
+  const map = {
+    // Messwerte
+    'lbl-height':       'height',
+    'lbl-lengths':      'lengths',
+    'lbl-shoulder_w':   'shoulder_w',
+    'lbl-hip_w':        'hip_w',
+    'lbl-arm_l':        'arm_l',
+    'lbl-arm_r':        'arm_r',
+    'lbl-forearm_l':    'forearm_l',
+    'lbl-forearm_r':    'forearm_r',
+    'lbl-thigh_l':      'thigh_l',
+    'lbl-thigh_r':      'thigh_r',
+    'lbl-shin_l':       'shin_l',
+    'lbl-shin_r':       'shin_r',
+    'lbl-torso':        'torso',
+    // Winkel
+    'lbl-angles-title': 'angles',
+    'lbl-shoulder_ang': 'shoulder_ang',
+    'lbl-hip_ang':      'hip_ang',
+    'lbl-knee_ang':     'knee_ang',
+    'lbl-hws':          'hws',
+    'lbl-bws':          'bws',
+    'lbl-lws':          'lws',
+    // Umfänge
+    'lbl-circ-title':   'circ',
+    'lbl-circ_chest':   'circ_chest',
+    'lbl-circ_waist':   'circ_waist',
+    'lbl-circ_hip':     'circ_hip',
+    // Asymmetrie
+    'lbl-asym-title':   'asym',
+    'asym-lbl-arm':     'arm',
+    'asym-lbl-thigh':   'thigh',
+    'asym-lbl-shin':    'shin',
+    // Achsenabweichung
+    'lbl-axdev-title':  'axdev',
+    'ax-lbl-shoulder':  'shoulder',
+    'ax-lbl-hip':       'hip',
+    'ax-lbl-knee':      'knee',
+    'ax-lbl-ankle':     'ankle',
+  };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el && L[key]) el.textContent = L[key];
+  });
+}
+
+// ── BODY CANVAS ───────────────────────────────────────────────────────────────
+const CONNECTIONS = [
+  ['l_shoulder','r_shoulder','#3060a0'],
+  ['l_shoulder','l_elbow','#4a7a5a'],['l_elbow','l_wrist','#6a9a7a'],
+  ['r_shoulder','r_elbow','#4a7a5a'],['r_elbow','r_wrist','#6a9a7a'],
+  ['l_shoulder','l_hip','#888'],['r_shoulder','r_hip','#888'],
+  ['l_hip','r_hip','#3060a0'],
+  ['l_hip','l_knee','#5a7ab0'],['l_knee','l_ankle','#7a9ad0'],
+  ['r_hip','r_knee','#5a7ab0'],['r_knee','r_ankle','#7a9ad0'],
+  ['nose','l_ear','#aaa'],['nose','r_ear','#aaa'],
+];
+
+const KP_COLORS = {
+  l_shoulder:'#4a7a5a',r_shoulder:'#4a7a5a',
+  l_hip:'#3060a0',r_hip:'#3060a0',
+  l_knee:'#5a7ab0',r_knee:'#5a7ab0',
+  l_ankle:'#7a9ad0',r_ankle:'#7a9ad0',
+  nose:'#888',l_ear:'#aaa',r_ear:'#aaa',
+};
+
+function drawBody(d) {
+  const cv  = document.getElementById('bodyCanvas');
+  const vid = document.getElementById('liveVid');
+
+  // Canvas exakt auf Video-Größe setzen
+  const vW = vid?.videoWidth  || 1280;
+  const vH = vid?.videoHeight || 720;
+
+  // Canvas CSS-Größe = Container, aber interne Auflösung = Video-Aspect-Ratio
+  const wrap = cv.parentElement;
+  const cW   = wrap?.clientWidth  || 640;
+  const cH   = wrap?.clientHeight || 480;
+
+  if (cv.width !== cW || cv.height !== cH) { cv.width=cW; cv.height=cH; }
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0,0,cW,cH);
+
+  const lm = d.landmarks_2d;
+  if (!lm || Object.keys(lm).length < 4) return;
+
+  const W = cW, H = cH;
+  const pts = {};
+  Object.entries(lm).forEach(([k, [x, y]]) => {
+    pts[k] = [(1-x) * W, y * H];
+  });
+
+  // Connections / Skeleton
+  if (vis.skel) {
+    CONNECTIONS.forEach(([a, b, col]) => {
+      if (!pts[a] || !pts[b]) return;
+      ctx.beginPath();
+      ctx.moveTo(...pts[a]);
+      ctx.lineTo(...pts[b]);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    });
+    // Keypoints
+    Object.entries(pts).forEach(([k, [x, y]]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI*2);
+      ctx.fillStyle = KP_COLORS[k] || '#4a7a5a';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  // Axis lines
+  if (vis.axis) {
+    const sl = pts['l_shoulder'], sr = pts['r_shoulder'];
+    const hl = pts['l_hip'],      hr = pts['r_hip'];
+    const kl = pts['l_knee'],     kr = pts['r_knee'];
+    // Schatten für Sichtbarkeit auf jedem Hintergrund
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur  = 4;
+    drawAxisLine(ctx, sl, sr, '#4488ff', d.shoulder_ang, vis.ang);  // Schulter — Blau
+    drawAxisLine(ctx, hl, hr, '#cc44cc', d.hip_ang,      vis.ang);  // Becken — Lila
+    drawAxisLine(ctx, kl, kr, '#44bb44', d.knee_ang,     vis.ang);  // Knie — Grün
+    ctx.shadowBlur = 0;
+  }
+
+  // Körperlot
+  if (vis.lot) {
+    const nose  = pts['nose'];
+    const ankle = pts['l_ankle'] || pts['r_ankle'];
+    if (nose && ankle) {
+      const cx = (nose[0] + ankle[0]) / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
+      ctx.strokeStyle = 'rgba(192,128,32,0.4)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Segment length labels
+  if (vis.seg && data) {
+    const segs = [
+      ['l_shoulder','l_elbow', 'arm_l'],
+      ['r_shoulder','r_elbow', 'arm_r'],
+      ['l_elbow','l_wrist',    'forearm_l'],
+      ['r_elbow','r_wrist',    'forearm_r'],
+      ['l_hip','l_knee',       'thigh_l'],
+      ['r_hip','r_knee',       'thigh_r'],
+      ['l_knee','l_ankle',     'shin_l'],
+      ['r_knee','r_ankle',     'shin_r'],
+    ];
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'center';
+    segs.forEach(([a, b, key]) => {
+      if (!pts[a] || !pts[b]) return;
+      const val = data[key];
+      if (val == null) return;
+      const mx = (pts[a][0]+pts[b][0])/2;
+      const my = (pts[a][1]+pts[b][1])/2;
+      const txt = `${val.toFixed(1)}cm`;
+      const tw = ctx.measureText(txt).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(mx-tw/2-2, my-8, tw+4, 12);
+      ctx.fillStyle = '#2d5a3d';
+      ctx.fillText(txt, mx, my+1);
+    });
+  }
+
+  // Wirbelsäulenkurve
+  if (vis.spine) {
+    const spine = ['nose','l_shoulder','l_hip','l_knee'].map(k=>pts[k]).filter(Boolean);
+    if (spine.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(...spine[0]);
+      for (let i=1;i<spine.length;i++) {
+        const p=spine[i-1],c=spine[i];
+        ctx.quadraticCurveTo(p[0],p[1],(p[0]+c[0])/2,(p[1]+c[1])/2);
+      }
+      ctx.lineTo(...spine[spine.length-1]);
+      ctx.strokeStyle = 'rgba(192,64,64,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4,3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Klinischer Modus — Grauton-Overlay
+  if (viewMode === 1) {
+    const imgData = ctx.getImageData(0, 0, cv.width, cv.height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) / 255;
+      d[i]   = Math.round(CLINICAL_DARK[0] + lum*(CLINICAL_LIGHT[0]-CLINICAL_DARK[0]));
+      d[i+1] = Math.round(CLINICAL_DARK[1] + lum*(CLINICAL_LIGHT[1]-CLINICAL_DARK[1]));
+      d[i+2] = Math.round(CLINICAL_DARK[2] + lum*(CLINICAL_LIGHT[2]-CLINICAL_DARK[2]));
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+
+function drawAxisLine(ctx, a, b, col, ang, showAng) {
+  if (!a || !b) return;
+  // Weiße Outline für Kontrast
+  ctx.beginPath();
+  ctx.moveTo(...a); ctx.lineTo(...b);
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 5;
+  ctx.setLineDash([]);
+  ctx.stroke();
+  // Farbige Linie
+  ctx.beginPath();
+  ctx.moveTo(...a); ctx.lineTo(...b);
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (showAng && ang != null) {
+    const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;
+    const txt=`${ang.toFixed(1)}°`;
+    ctx.font='bold 9px Inter';
+    ctx.textAlign='center';
+    const tw=ctx.measureText(txt).width;
+    ctx.fillStyle='rgba(255,255,255,0.88)';
+    ctx.fillRect(mx-tw/2-2,my-10,tw+4,12);
+    ctx.fillStyle=col;
+    ctx.fillText(txt,mx,my+1);
+  }
+}
+
+// ── CONTROLS ──────────────────────────────────────────────────────────────────
+function updateVis() {
+  vis.skel   = document.getElementById('t-skel').checked;
+  vis.axis   = document.getElementById('t-axis').checked;
+  vis.lot    = document.getElementById('t-lot').checked;
+  vis.seg    = document.getElementById('t-seg').checked;
+  vis.ang    = document.getElementById('t-ang').checked;
+  vis.spine  = document.getElementById('t-spine').checked;
+  vis.lengths= document.getElementById('t-lengths').checked;
+  vis.angles = document.getElementById('t-angles').checked;
+  vis.circ   = document.getElementById('t-circ').checked;
+  vis.asym   = document.getElementById('t-asym').checked;
+  vis.axdev  = document.getElementById('t-axdev').checked;
+
+  // Grids ein/ausblenden
+  document.getElementById('grid-lengths').style.display = vis.lengths ? '' : 'none';
+  document.getElementById('grid-angles').style.display  = vis.angles  ? '' : 'none';
+  document.getElementById('grid-circ').style.display    = vis.circ    ? '' : 'none';
+  document.getElementById('sec-asym').style.display     = vis.asym    ? '' : 'none';
+  document.getElementById('sec-axdev').style.display    = vis.axdev   ? '' : 'none';
+
+  // Canvas sofort neu zeichnen
+  if (data) drawBody(data);
+}
+
+// ── ANSICHTSMODUS ─────────────────────────────────────────────────────────────
+let viewMode = 0; // 0=Normal, 1=Klinisch
+
+// ANTHRO3D klinische Designfarben
+const CLINICAL_BG    = [242, 245, 243]; // --bg
+const CLINICAL_LIGHT = [228, 235, 230]; // Körper hell
+const CLINICAL_DARK  = [195, 210, 198]; // Körper Schatten
+
+let clinOffCv = null, clinOffCtx = null;
+
+function toggleViewMode() {
+  viewMode = viewMode === 0 ? 1 : 0;
+  const lbl = document.getElementById('viewModeLabel');
+  const bn  = document.getElementById('vbtn-normal');
+  const bc  = document.getElementById('vbtn-clinical');
+  if (viewMode === 0) {
+    lbl.textContent = 'NORMAL';
+    bn.style.cssText = 'padding:4px 10px;font-size:10px;font-weight:500;background:var(--g5);color:var(--g1);border-right:1px solid var(--border);transition:all 0.15s;';
+    bc.style.cssText = 'padding:4px 10px;font-size:10px;color:var(--muted);transition:all 0.15s;';
+  } else {
+    lbl.textContent = 'KLINISCH';
+    bn.style.cssText = 'padding:4px 10px;font-size:10px;color:var(--muted);border-right:1px solid var(--border);transition:all 0.15s;';
+    bc.style.cssText = 'padding:4px 10px;font-size:10px;font-weight:500;background:var(--g5);color:var(--g1);transition:all 0.15s;';
+  }
+}
+
+function applyClinicalMode(srcCanvas) {
+  // Klinischer Modus: Grauton-Rendering im ANTHRO3D Design
+  if (!clinOffCv) {
+    clinOffCv  = document.createElement('canvas');
+    clinOffCtx = clinOffCv.getContext('2d', {willReadFrequently:true});
+  }
+  clinOffCv.width  = srcCanvas.width;
+  clinOffCv.height = srcCanvas.height;
+  clinOffCtx.drawImage(srcCanvas, 0, 0);
+  const imgData = clinOffCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) / 255;
+    d[i]   = Math.round(CLINICAL_DARK[0] + lum*(CLINICAL_LIGHT[0]-CLINICAL_DARK[0]));
+    d[i+1] = Math.round(CLINICAL_DARK[1] + lum*(CLINICAL_LIGHT[1]-CLINICAL_DARK[1]));
+    d[i+2] = Math.round(CLINICAL_DARK[2] + lum*(CLINICAL_LIGHT[2]-CLINICAL_DARK[2]));
+  }
+  clinOffCtx.putImageData(imgData, 0, 0);
+  return clinOffCv;
+}
+
+// ── KALMAN TOGGLE ─────────────────────────────────────────────────────────────
+function toggleKalman() {
+  const enabled = document.getElementById('t-kalman').checked;
+  // WebSocket Befehl an Python senden
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({cmd: 'kalman', enabled}));
+  }
+  updateKalmanStatus(enabled);
+}
+
+function updateKalmanStatus(enabled) {
+  const el = document.getElementById('kalmanVal');
+  if (!el) return;
+  el.textContent = enabled ? 'EIN ✓' : 'AUS';
+  el.style.color = enabled ? 'var(--g1)' : 'var(--muted)';
+  el.style.fontWeight = enabled ? '600' : '400';
+}
+let recActive = false, recStart = null, recTimer = null;
+
+function toggleRec() {
+  recActive = !recActive;
+  const btn  = document.getElementById('recBtn');
+  const dot  = document.getElementById('recDot');
+  const time = document.getElementById('recTime');
+  const bar  = document.getElementById('recBar');
+
+  if (recActive) {
+    // Aufnahme starten
+    recStart = Date.now();
+    btn.textContent = '■ Aufnahme stoppen';
+    btn.style.background = 'var(--red)';
+    dot.style.background = 'var(--red)';
+    dot.style.boxShadow  = '0 0 8px var(--red)';
+    dot.style.animation  = 'blink 1s infinite';
+    time.style.display   = 'block';
+    bar.style.background = 'rgba(255,245,245,0.85)';
+    bar.style.borderColor = 'rgba(192,64,64,0.3)';
+
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now()-recStart)/1000);
+      const m = Math.floor(s/60), sec = s%60;
+      time.textContent = `${m}:${sec.toString().padStart(2,'0')}`;
+    }, 1000);
+
+    // Signal an Python WebSocket senden
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({cmd:'rec_start'}));
+    }
+  } else {
+    // Aufnahme stoppen
+    clearInterval(recTimer);
+    btn.textContent = '● Aufnahme starten';
+    btn.style.background = 'var(--g1)';
+    dot.style.background = 'var(--muted)';
+    dot.style.boxShadow  = 'none';
+    dot.style.animation  = 'none';
+    time.style.display   = 'none';
+    bar.style.background = 'rgba(255,255,255,0.78)';
+    bar.style.borderColor = 'rgba(212,224,214,0.8)';
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({cmd:'rec_stop'}));
+    }
+  }
+}
+
+function takeSnapshot() {
+  const cv = document.getElementById('bodyCanvas');
+  if (!cv) return;
+  const a = document.createElement('a');
+  a.download = `anthro3d_snapshot_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.png`;
+  a.href = cv.toDataURL('image/png');
+  a.click();
+}
+
+function setView(v, el) {
+  view = v;
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function toggleLang() {
+  lang = lang === 'de' ? 'en' : 'de';
+  const btn = document.querySelector('.lang-btn');
+  if (btn) btn.textContent = lang === 'de' ? 'DE / EN' : 'EN / DE';
+  // Labels immer aktualisieren — auch ohne WebSocket-Daten
+  const L = LABELS[lang];
+  updateLabels(L);
+  // Falls Daten vorhanden auch Messwerte neu beschriften
+  if (data) { data.lang = lang; update(data); }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+connect();
+startCamera();
+updateLabels(LABELS[lang]);
+setInterval(() => { if (data) drawBody(data); }, 100);
+</script>
+</body>
+</html>

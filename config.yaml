@@ -1,0 +1,22 @@
+calibration:
+  ema_alpha: 0.3
+  marker_size_cm: 10.0
+  stability_frames: 30
+cameras:
+  tracking:
+  - device_index: 1
+    enabled: true
+    id: 1
+    name: OV9281 L
+  - device_index: 2
+    enabled: true
+    id: 1
+    name: OV9281 R
+  - device_index: 0
+    enabled: true
+    id: 3
+    name: ELP2
+  - device_index: 3
+    enabled: true
+    id: 2
+    name: ELP1

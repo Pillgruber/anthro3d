@@ -1,0 +1,81 @@
+anamnese:
+  alkohol: —
+  allergien: ''
+  beruf: ''
+  beschwerden: ioug8og89
+  familie: ''
+  medikamente: ''
+  nikotin: —
+  operationen: ''
+  sport: ''
+  vorerkrankungen: ''
+aufklaerung:
+  arzt: ''
+  datum: 03.06.2026
+  dsgvo: true
+  einwill: ''
+  foto: true
+  inhalt: ''
+befunde:
+  bildgebung: ''
+  gewicht: ''
+  groesse: ''
+  klinisch: ''
+  labor: ''
+  meas:
+    Beckenachse: ''
+    Brustumfang: ''
+    Huefte: ''
+    Hueftumfang: ''
+    Koerpergroesse: ''
+    Schulterachse: ''
+    Schulterbreite: ''
+    Taillenumfang: ''
+  puls: ''
+  rr: ''
+  spo2: ''
+  temp: ''
+diagnosen:
+  hauptdiagnose: ''
+  hauptdiagnose_txt: ''
+  nebendiagnosen: ''
+  verdachtsdiagnosen: ''
+entlassung:
+  bericht: ''
+  datum: ''
+  empfehlung: ''
+  medplan: ''
+  status: —
+gespeichert: 03.06.2026 22:18
+stammdaten:
+  email: ''
+  geburtsdatum: ''
+  geschlecht: —
+  kartennummer: ''
+  kasse: ''
+  nachname: Alexander
+  notfall: ''
+  ort: ''
+  plz: ''
+  strasse: ''
+  telefon: ''
+  vnr: ''
+  vorname: 'Pillgruber '
+therapie:
+  anordnungen: ''
+  bps:
+    bio: ''
+    psycho: ''
+    sozial: ''
+  icf:
+    aktivitaet: ''
+    partizipation: ''
+  komplikationen: ''
+  medikamente: []
+  physiotherapie: ''
+  smart:
+    attraktiv: ''
+    messbar: ''
+    realistisch: ''
+    spezifisch: ''
+    terminiert: ''
