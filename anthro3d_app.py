@@ -2529,6 +2529,10 @@ if count>=5:
                 cap = cv2.VideoCapture(idx)
                 if cap.isOpened():
                     self.setup_caps[idx] = cap
+                    # Preview property auf echten device index setzen
+                    for row in self.setup_rows:
+                        if row['index'] == idx:
+                            row['preview'].setProperty("cam_index", idx)
             else:
                 row['frame'].setVisible(False)
 

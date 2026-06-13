@@ -77,9 +77,21 @@ for _ in range(50):
 cap2_cal.release(); capovL_cal.release()
 
 if R_ov_list:
-    R_rel_ov = np.mean(R_ov_list, axis=0)
-    T_rel_ov = np.mean(T_ov_list, axis=0)
-    print(f"OV9281→ELP2 T: {T_rel_ov*100} cm  Distanz: {np.linalg.norm(T_rel_ov)*100:.1f} cm")
+    T_arr = np.array(T_ov_list)
+    R_arr = np.array(R_ov_list)
+    # Ausreißer filtern
+    dists = np.linalg.norm(T_arr, axis=1)
+    med = np.median(dists)
+    mask = dists < med * 1.3
+    T_arr = T_arr[mask]; R_arr = R_arr[mask]
+    # Rotation korrekt über Rodrigues-Vektoren mitteln
+    import cv2 as _cv2
+    rvecs = np.array([_cv2.Rodrigues(R)[0].flatten() for R in R_arr])
+    rvec_mean = np.mean(rvecs, axis=0)
+    R_rel_ov, _ = _cv2.Rodrigues(rvec_mean)
+    T_rel_ov = np.mean(T_arr, axis=0)
+    print(f"OV9281→ELP2 T: {T_rel_ov*100} cm  Distanz: {np.linalg.norm(T_rel_ov)*100:.1f} cm ({mask.sum()}/{len(mask)} gut)")
+    print(f"  det(R)={np.linalg.det(R_rel_ov):.4f}")
     OV_OK = True
 else:
     print("WARNUNG: OV9281→ELP2 Marker nicht gefunden — OV9281 deaktiviert")
@@ -111,7 +123,7 @@ capovL.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovL.set(cv2.CAP_PROP_FRAME_HEIGHT,
 capovR = cv2.VideoCapture(2)
 capovR.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovR.set(cv2.CAP_PROP_FRAME_HEIGHT,800)
 
-def get_disp_split(cap, ml1, ml2, mr1, mr2, lm_, rm_, wls_):
+def get_disp_split(cap, ml1, ml2, mr1, mr2, lm_, rm_, wls_, alpha=2.5, beta=30):
     """ELP: ein Frame mit L+R nebeneinander"""
     ret,frame = cap.read()
     if not ret: return None,None
@@ -227,19 +239,56 @@ while True:
         print(f"✓ ELP2:{st2.mean()*100:.0f}% ELP1:{st1.mean()*100:.0f}%{ov_pct} — Person hinstellen → SPACE")
 
     if key==ord(' ') and st2 is not None:
+        # 5 Sekunden Countdown
+        import time as _time
+        for _i in range(5, 0, -1):
+            d2,fl2 = get_disp_split(cap2, ml2_1,ml2_2,mr2_1,mr2_2, lm_elp,rm_elp,wls_elp)
+            d1,fl1 = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
+            if d2 is None or d1 is None: continue
+            dv2 = (np.clip(d2,0,128)/128*255).astype(np.uint8)
+            row1 = np.hstack([cv2.resize(fl2,(480,300)), cv2.resize(cv2.applyColorMap(dv2,cv2.COLORMAP_JET),(480,300)), np.zeros((300,480,3),np.uint8)])
+            out = np.vstack([row1, np.zeros((300,1440,3),np.uint8)])
+            cv2.putText(out, f"Hinstellen! Scan in {_i} Sekunden...", (30,40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0,255,0), 3)
+            cv2.imshow("ELP2 | ELP1", out)
+            cv2.waitKey(1)
+            _time.sleep(1)
+        # Frische Frames für den Scan holen
+        d2,fl2 = get_disp_split(cap2, ml2_1,ml2_2,mr2_1,mr2_2, lm_elp,rm_elp,wls_elp)
+        d1,fl1 = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
+        if OV_OK:
+            dov,flov = get_disp_dual(capovL,capovR, mlov1,mlov2,mrov1,mrov2, lm_ov,rm_ov,wls_ov)
+        if st2 is not None:
+            m2 = get_mask(d2, bg2, st2, 800, 600)
+            m1 = get_mask(d1, bg1, st1, 800, 600)
+            if OV_OK and dov is not None and stov is not None:
+                mov = get_mask(dov, bgov, stov, 640, 400)
         p2,c2   = disp_to_pts(d2,  fl2,  m2,  fx2,  cx2,  cy2,  bl2)
         p1,c1   = disp_to_pts(d1,  fl1,  m1,  fx1,  cx1,  cy1,  bl1)
         parts=[]; cparts=[]
         if p2 is not None:
+            zmask2 = (p2[:,2] > 0.5) & (p2[:,2] < 4.0)
+            xmask2 = (p2[:,0] > -1.5) & (p2[:,0] < 1.5)
+            p2 = p2[zmask2 & xmask2]; c2 = c2[zmask2 & xmask2]
             parts.append(p2); cparts.append(c2)
             print(f"ELP2: {len(p2)}")
         if p1 is not None:
             p1_t = (R_rel_elp1 @ p1.T).T + T_rel_elp1
+            # Z-Clipping: nur Punkte 0.5–4m vor ELP2 Ursprung
+            zmask1 = (p1_t[:,2] > 0.5) & (p1_t[:,2] < 4.0)
+            # X-Clipping: ±1.5m um Bildmitte
+            xmask1 = (p1_t[:,0] > -1.5) & (p1_t[:,0] < 1.5)
+            mask1 = zmask1 & xmask1
+            p1_t = p1_t[mask1]; c1 = c1[mask1]
             parts.append(p1_t); cparts.append(c1)
-            print(f"ELP1: {len(p1)} → transformiert")
+            print(f"ELP1: {len(p1)} → {len(p1_t)} nach Clipping")
         if OV_OK and mov is not None and stov is not None:
             pov,cov_col = disp_to_pts(dov, flov, mov, fxov, cxov, cyov, blov)
             if pov is not None:
+                print(f"OV9281 Z-Bereich: {pov[:,2].min()*100:.0f}–{pov[:,2].max()*100:.0f}cm")
+                print(f"OV9281 X-Bereich: {pov[:,0].min()*100:.0f}–{pov[:,0].max()*100:.0f}cm")
+                # Z-Clipping: nur Punkte 0.3–3m vor OV9281
+                zmask = (pov[:,2] > 0.3) & (pov[:,2] < 3.0)
+                pov = pov[zmask]; cov_col = cov_col[zmask]
                 pov_t = (R_rel_ov @ pov.T).T + T_rel_ov
                 parts.append(pov_t); cparts.append(cov_col)
                 print(f"OV9281: {len(pov)} → transformiert")
@@ -247,6 +296,9 @@ while True:
             all_pts = np.vstack(parts); all_cols = np.vstack(cparts)
             print(f"Gesamt: {len(all_pts)}")
             print(f"Breite:{(all_pts[:,0].max()-all_pts[:,0].min())*100:.0f}cm Höhe:{(all_pts[:,1].max()-all_pts[:,1].min())*100:.0f}cm")
+            # Pro-Kamera Diagnose
+            if p2 is not None and len(p2)>0: print(f"  ELP2  X:{p2[:,0].min()*100:.0f}–{p2[:,0].max()*100:.0f}cm  Z:{p2[:,2].min()*100:.0f}–{p2[:,2].max()*100:.0f}cm")
+            if p1 is not None and len(p1_t)>0: print(f"  ELP1  X:{p1_t[:,0].min()*100:.0f}–{p1_t[:,0].max()*100:.0f}cm  Z:{p1_t[:,2].min()*100:.0f}–{p1_t[:,2].max()*100:.0f}cm")
             break
 
 cap2.release(); cap1.release(); capovL.release(); capovR.release()
@@ -254,6 +306,42 @@ cv2.destroyAllWindows()
 
 if all_pts is not None:
     pts=all_pts.copy(); cols=all_cols.copy()
+
+    # 3D ROI — Objekt in der Mitte isolieren
+    # Schritt 1: Grober Z-Cluster — dichteste Tiefenebene finden
+    z_hist, z_edges = np.histogram(pts[:,2], bins=50)
+    z_peak_idx = np.argmax(z_hist)
+    z_center = (z_edges[z_peak_idx] + z_edges[z_peak_idx+1]) / 2
+    Z_MARGIN = 0.35  # ±35cm Tiefe
+
+    # Schritt 2: Innerhalb dieser Tiefe den X/Y Schwerpunkt finden
+    zmask = np.abs(pts[:,2] - z_center) < Z_MARGIN
+    if zmask.sum() > 50:
+        x_center = np.median(pts[zmask, 0])
+        y_center = np.median(pts[zmask, 1])
+        X_MARGIN = 0.60  # ±60cm links/rechts
+        Y_MARGIN = 0.80  # ±80cm oben/unten
+
+        roi = zmask &               (np.abs(pts[:,0] - x_center) < X_MARGIN) &               (np.abs(pts[:,1] - y_center) < Y_MARGIN)
+        pts = pts[roi]; cols = cols[roi]
+        print(f"ROI: Zentrum=({x_center*100:.0f},{y_center*100:.0f},{z_center*100:.0f})cm → {len(pts)} Punkte")
+
+    # Statistisches Outlier-Removal (ohne sklearn, nur numpy)
+    print(f"Outlier-Removal: {len(pts)} Punkte...")
+    RADIUS = 0.05; N_NEIGHBORS = 10
+    # Subsample für Speed, dann auf alle anwenden
+    step_r = max(1, len(pts)//5000)
+    ref = pts[::step_r]
+    keep = np.zeros(len(pts), dtype=bool)
+    for i in range(0, len(pts), 2000):
+        chunk = pts[i:i+2000]
+        diffs = chunk[:,None,:] - ref[None,:,:]
+        dists = np.sqrt((diffs**2).sum(axis=2))
+        counts = (dists < RADIUS).sum(axis=1)
+        keep[i:i+2000] = counts >= N_NEIGHBORS
+    pts = pts[keep]; cols = cols[keep]
+    print(f"  Nach Filter: {len(pts)} Punkte ({keep.sum()*100//len(keep)}% behalten)")
+
     pts[:,0]-=pts[:,0].mean(); pts[:,1]-=pts[:,1].mean(); pts[:,2]-=pts[:,2].mean()
     pts[:,1]=-pts[:,1]
     step=max(1,len(pts)//10000); pts=pts[::step]; cols=cols[::step]
