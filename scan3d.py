@@ -15,7 +15,7 @@ def make_maps_split(cfg, size=(1600,1200)):
     K_l=np.array(cfg['camera_matrix_l']); d_l=np.array(cfg['dist_l'])
     K_r=np.array(cfg['camera_matrix_r']); d_r=np.array(cfg['dist_r'])
     R=np.array(cfg['R']); T=np.array(cfg['T'])
-    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,alpha=0.5)
+    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,alpha=0)
     ml1,ml2=cv2.initUndistortRectifyMap(K_l,d_l,R1,P1,size,cv2.CV_32F)
     mr1,mr2=cv2.initUndistortRectifyMap(K_r,d_r,R2,P2,size,cv2.CV_32F)
     return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0])
@@ -182,6 +182,20 @@ def disp_to_pts(disp, fl, mask, fx, cx, cy, bl):
 bg2=bg1=bgov=st2=st1=stov=None
 all_pts=all_cols=None
 
+
+# Hintergrund automatisch aus Kalibrierung laden
+from pathlib import Path as _Path
+_cal = _Path("~/anthro3d/calibration_bg.npz").expanduser()
+if _cal.exists():
+    _data = np.load(_cal)
+    bg2=_data['bg2']; bg1=_data['bg1']
+    st2=_data['st2']; st1=_data['st1']
+    if _data['OV_OK'][0]:
+        bgov=_data['bgov']; stov=_data['stov']
+    print("✓ Hintergrund aus Kalibrierung geladen — direkt SPACE drücken")
+else:
+    print("⚠ Keine Kalibrierung gefunden — B drücken für Hintergrund")
+
 print("Fenster anklicken → B=Hintergrund | SPACE=Scan | Q=Beenden")
 
 while True:
@@ -241,14 +255,14 @@ while True:
     if key==ord(' ') and st2 is not None:
         # 5 Sekunden Countdown
         import time as _time
-        for _i in range(5, 0, -1):
+        for _i in range(3, 0, -1):
             d2,fl2 = get_disp_split(cap2, ml2_1,ml2_2,mr2_1,mr2_2, lm_elp,rm_elp,wls_elp)
             d1,fl1 = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
             if d2 is None or d1 is None: continue
             dv2 = (np.clip(d2,0,128)/128*255).astype(np.uint8)
             row1 = np.hstack([cv2.resize(fl2,(480,300)), cv2.resize(cv2.applyColorMap(dv2,cv2.COLORMAP_JET),(480,300)), np.zeros((300,480,3),np.uint8)])
             out = np.vstack([row1, np.zeros((300,1440,3),np.uint8)])
-            cv2.putText(out, f"Hinstellen! Scan in {_i} Sekunden...", (30,40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0,255,0), 3)
+            cv2.putText(out, f"Scan in {_i}...", (30,40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0,255,0), 3)
             cv2.imshow("ELP2 | ELP1", out)
             cv2.waitKey(1)
             _time.sleep(1)
@@ -257,13 +271,16 @@ while True:
         d1,fl1 = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
         if OV_OK:
             dov,flov = get_disp_dual(capovL,capovR, mlov1,mlov2,mrov1,mrov2, lm_ov,rm_ov,wls_ov)
-        if st2 is not None:
-            m2 = get_mask(d2, bg2, st2, 800, 600)
-            m1 = get_mask(d1, bg1, st1, 800, 600)
-            if OV_OK and dov is not None and stov is not None:
-                mov = get_mask(dov, bgov, stov, 640, 400)
+        # Keine 2D-Maske — volle Disparität, 3D-Voxel-Differenz macht die Trennung
+        m2 = np.ones((600, 800), dtype=np.uint8) * 255
+        m1 = np.ones((600, 800), dtype=np.uint8) * 255
+        if OV_OK and dov is not None:
+            mov = np.ones((400, 640), dtype=np.uint8) * 255
         p2,c2   = disp_to_pts(d2,  fl2,  m2,  fx2,  cx2,  cy2,  bl2)
         p1,c1   = disp_to_pts(d1,  fl1,  m1,  fx1,  cx1,  cy1,  bl1)
+        # DEBUG: ELP2=rot, ELP1=blau
+        if p2 is not None: c2[:] = [255, 50, 50]
+        if p1 is not None: c1[:] = [50, 50, 255]
         parts=[]; cparts=[]
         if p2 is not None:
             zmask2 = (p2[:,2] > 0.5) & (p2[:,2] < 4.0)
@@ -274,10 +291,10 @@ while True:
         if p1 is not None:
             p1_t = (R_rel_elp1 @ p1.T).T + T_rel_elp1
             # Z-Clipping: nur Punkte 0.5–4m vor ELP2 Ursprung
-            zmask1 = (p1_t[:,2] > 0.5) & (p1_t[:,2] < 4.0)
-            # X-Clipping: ±1.5m um Bildmitte
-            xmask1 = (p1_t[:,0] > -1.5) & (p1_t[:,0] < 1.5)
+            zmask1 = (p1_t[:,2] > -15.0) & (p1_t[:,2] < 15.0)
+            xmask1 = (p1_t[:,0] > -15.0) & (p1_t[:,0] < 15.0)
             mask1 = zmask1 & xmask1
+            print(f"ELP1 transformiert: X={p1_t[:,0].min()*100:.0f}-{p1_t[:,0].max()*100:.0f} Y={p1_t[:,1].min()*100:.0f}-{p1_t[:,1].max()*100:.0f} Z={p1_t[:,2].min()*100:.0f}-{p1_t[:,2].max()*100:.0f}")
             p1_t = p1_t[mask1]; c1 = c1[mask1]
             parts.append(p1_t); cparts.append(c1)
             print(f"ELP1: {len(p1)} → {len(p1_t)} nach Clipping")
@@ -287,10 +304,11 @@ while True:
                 print(f"OV9281 Z-Bereich: {pov[:,2].min()*100:.0f}–{pov[:,2].max()*100:.0f}cm")
                 print(f"OV9281 X-Bereich: {pov[:,0].min()*100:.0f}–{pov[:,0].max()*100:.0f}cm")
                 # Z-Clipping: nur Punkte 0.3–3m vor OV9281
-                zmask = (pov[:,2] > 0.3) & (pov[:,2] < 3.0)
-                pov = pov[zmask]; cov_col = cov_col[zmask]
                 pov_t = (R_rel_ov @ pov.T).T + T_rel_ov
                 parts.append(pov_t); cparts.append(cov_col)
+                pov_t = (R_rel_ov @ pov.T).T + T_rel_ov
+                pass  # DEBUG: OV9281 deaktiviert
+                pass  # OV9281 nicht hinzufügen
                 print(f"OV9281: {len(pov)} → transformiert")
         if parts:
             all_pts = np.vstack(parts); all_cols = np.vstack(cparts)
@@ -307,24 +325,61 @@ cv2.destroyAllWindows()
 if all_pts is not None:
     pts=all_pts.copy(); cols=all_cols.copy()
 
+
+    # PCA — Figur aufrichten
+    mean = pts.mean(axis=0)
+    pts_c = pts - mean
+    cov = np.cov(pts_c.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    order = np.argsort(eigvals)[::-1]
+    eigvecs = eigvecs[:, order]
+    if eigvecs[1, 0] < 0:
+        eigvecs[:, 0] = -eigvecs[:, 0]
+    pts = (pts_c @ eigvecs) + mean
+    print(f"PCA: Figur ausgerichtet")
+
+    # Scan-Korridor anwenden
+    _hull_path = Path("~/anthro3d/scan_corridor_hull.npy").expanduser()
+    _y_path = Path("~/anthro3d/scan_corridor_y.npy").expanduser()
+    print("Korridor: deaktiviert (DEBUG)")
+
+    # Hintergrund-Voxels entfernen (mit Dilation)
+    cal=np.load(Path("~/anthro3d/calibration_bg.npz").expanduser())
+    if 'bg_dilated_keys' in cal.files and len(cal['bg_dilated_keys'])>0:
+        voxel=float(cal['bg_voxel'][0])
+        bg_keys=set(cal['bg_dilated_keys'].tolist())
+        pt_idx=(pts/voxel).astype(np.int32)
+        pt_keys=pt_idx[:,0]*1000000+pt_idx[:,1]*1000+pt_idx[:,2]
+        fg_mask=np.array([k not in bg_keys for k in pt_keys])
+        pts=pts[fg_mask]; cols=cols[fg_mask]
+        print(f"Hintergrund entfernt (Dilation): {fg_mask.sum()} Vordergrund-Punkte")
+
     # 3D ROI — Objekt in der Mitte isolieren
-    # Schritt 1: Grober Z-Cluster — dichteste Tiefenebene finden
-    z_hist, z_edges = np.histogram(pts[:,2], bins=50)
-    z_peak_idx = np.argmax(z_hist)
-    z_center = (z_edges[z_peak_idx] + z_edges[z_peak_idx+1]) / 2
-    Z_MARGIN = 0.35  # ±35cm Tiefe
+    # Zentrum aus Korridor-Schwerpunkt (robuster als Histogramm-Peak)
+    _hull_path = Path("~/anthro3d/scan_corridor_hull.npy").expanduser()
+    if _hull_path.exists() and len(np.load(_hull_path)) > 0:
+        _hull = np.load(_hull_path)
+        x_center = float(_hull[:, 0].mean())
+        z_center = float(_hull[:, 1].mean())
+        print(f"ROI-Zentrum aus Korridor: X={x_center*100:.0f}cm Z={z_center*100:.0f}cm")
+    else:
+        # Fallback: Histogramm-Peak
+        z_hist, z_edges = np.histogram(pts[:,2], bins=50)
+        z_peak_idx = np.argmax(z_hist)
+        z_center = (z_edges[z_peak_idx] + z_edges[z_peak_idx+1]) / 2
+        x_center = np.median(pts[:,0])
+        print(f"ROI-Zentrum (Fallback): X={x_center*100:.0f}cm Z={z_center*100:.0f}cm")
 
-    # Schritt 2: Innerhalb dieser Tiefe den X/Y Schwerpunkt finden
-    zmask = np.abs(pts[:,2] - z_center) < Z_MARGIN
-    if zmask.sum() > 50:
-        x_center = np.median(pts[zmask, 0])
-        y_center = np.median(pts[zmask, 1])
-        X_MARGIN = 0.60  # ±60cm links/rechts
-        Y_MARGIN = 0.80  # ±80cm oben/unten
+    X_MARGIN = 1.00  # ±100cm links/rechts
+    Y_MARGIN = 1.20  # ±120cm oben/unten
+    Z_MARGIN = 1.00  # ±100cm Tiefe um Korridor-Zentrum
 
-        roi = zmask &               (np.abs(pts[:,0] - x_center) < X_MARGIN) &               (np.abs(pts[:,1] - y_center) < Y_MARGIN)
-        pts = pts[roi]; cols = cols[roi]
-        print(f"ROI: Zentrum=({x_center*100:.0f},{y_center*100:.0f},{z_center*100:.0f})cm → {len(pts)} Punkte")
+    roi = (np.abs(pts[:,0] - x_center) < X_MARGIN) &           (np.abs(pts[:,2] - z_center) < Z_MARGIN)
+    if roi.sum() > 50:
+        y_center = np.median(pts[roi, 1])
+        roi = roi & (np.abs(pts[:,1] - y_center) < Y_MARGIN)
+    pts = pts[roi]; cols = cols[roi]
+    print(f"ROI: {len(pts)} Punkte")
 
     # Statistisches Outlier-Removal (ohne sklearn, nur numpy)
     print(f"Outlier-Removal: {len(pts)} Punkte...")
@@ -342,19 +397,48 @@ if all_pts is not None:
     pts = pts[keep]; cols = cols[keep]
     print(f"  Nach Filter: {len(pts)} Punkte ({keep.sum()*100//len(keep)}% behalten)")
 
+    print(f"DEBUG vor Viewer: {len(pts)} Punkte, pts shape={pts.shape}")
     pts[:,0]-=pts[:,0].mean(); pts[:,1]-=pts[:,1].mean(); pts[:,2]-=pts[:,2].mean()
     pts[:,1]=-pts[:,1]
     step=max(1,len(pts)//10000); pts=pts[::step]; cols=cols[::step]
 
-    class Viewer(QWidget):
+    from PyQt6.QtWidgets import QSlider, QHBoxLayout, QVBoxLayout, QWidget as QW
+    from PyQt6.QtCore import Qt as Qt2
+
+    class Viewer(QW):
         def __init__(self):
             super().__init__()
-            self.setWindowTitle("ELP1+ELP2+OV9281 — Maus=Drehen | Scroll=Zoom")
-            self.resize(900,1000); self.rx=15; self.ry=0; self.last=None
+            self.setWindowTitle("ELP1+ELP2+OV9281 — Maus=Drehen | Slider=Zoom")
+            self.resize(1000,1000)
+            self.rx=15; self.ry=0; self.last=None
             self.scale=300/max(pts[:,1].max()-pts[:,1].min(),0.1)
-        def paintEvent(self,e):
-            p=QPainter(self); p.fillRect(self.rect(),QColor(20,20,20))
-            cx_=self.width()//2; cy_=self.height()//2
+
+            # Layout: Canvas + vertikaler Slider
+            hlay = QHBoxLayout(self); hlay.setContentsMargins(0,0,0,0); hlay.setSpacing(0)
+
+            self.canvas = QW(self)
+            self.canvas.setMinimumSize(900,900)
+            self.canvas.paintEvent = self._paint
+            self.canvas.mousePressEvent = self._mpress
+            self.canvas.mouseMoveEvent = self._mmove
+            self.canvas.mouseReleaseEvent = self._mrelease
+            hlay.addWidget(self.canvas, 1)
+
+            # Vertikaler Zoom-Schieberegler
+            self.slider = QSlider(Qt2.Orientation.Vertical, self)
+            self.slider.setMinimum(50); self.slider.setMaximum(2000)
+            self.slider.setValue(int(self.scale))
+            self.slider.setFixedWidth(40)
+            self.slider.setToolTip("Zoom")
+            self.slider.valueChanged.connect(self._on_zoom)
+            hlay.addWidget(self.slider)
+
+        def _on_zoom(self, val):
+            self.scale = val; self.canvas.update()
+
+        def _paint(self,e):
+            p=QPainter(self.canvas); p.fillRect(self.canvas.rect(),QColor(20,20,20))
+            cx_=self.canvas.width()//2; cy_=self.canvas.height()//2
             rx=math.radians(self.rx); ry=math.radians(self.ry)
             cX,sX=math.cos(rx),math.sin(rx); cY,sY=math.cos(ry),math.sin(ry)
             proj=[]
@@ -366,13 +450,15 @@ if all_pts is not None:
             proj.sort(key=lambda v:v[0])
             for _,sx,sy,c in proj:
                 p.setPen(QColor(int(c[0]),int(c[1]),int(c[2]))); p.drawPoint(sx,sy)
-        def mousePressEvent(self,e): self.last=e.position()
-        def mouseMoveEvent(self,e):
+            p.setPen(QColor(100,100,100))
+            p.drawText(10,20,f"Punkte: {len(pts)} | Zoom: {int(self.scale)}")
+
+        def _mpress(self,e): self.last=e.position()
+        def _mmove(self,e):
             if self.last:
                 dx=e.position().x()-self.last.x(); dy=e.position().y()-self.last.y()
-                self.ry+=dx*0.5; self.rx+=dy*0.5; self.last=e.position(); self.update()
-        def mouseReleaseEvent(self,e): self.last=None
-        def wheelEvent(self,e):
-            self.scale*=1.1 if e.angleDelta().y()>0 else 0.9; self.update()
+                self.ry+=dx*0.5; self.rx+=dy*0.5; self.last=e.position()
+                self.canvas.update()
+        def _mrelease(self,e): self.last=None
 
     app=QApplication(sys.argv); w=Viewer(); w.show(); app.exec()

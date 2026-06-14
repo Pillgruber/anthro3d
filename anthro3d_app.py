@@ -1629,7 +1629,7 @@ class MainWindow(QMainWindow):
 
         aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
         params = cv2.aruco.DetectorParameters()
-        params.minMarkerPerimeterRate = 0.03
+        params.minMarkerPerimeterRate = 0.05
         detector = cv2.aruco.ArucoDetector(aruco_dict, params)
         MARKER_SIZE = 0.19
         K = np.array([[1400,0,960],[0,1400,540],[0,0,1]], dtype=np.float64)
@@ -1722,8 +1722,23 @@ class MainWindow(QMainWindow):
                               'cameras': result}
                     with open(Path("~/anthro3d/cam_positions.yaml").expanduser(), 'w') as f:
                         yaml.dump(config, f, default_flow_style=False)
-                    self.auto_calib_status.setText(f"✓ Gespeichert — {len(result)} Kameras")
+                    self.auto_calib_status.setText(f"✓ Gespeichert — {len(result)} Kameras — Hintergrund wird aufgenommen...")
                     self.auto_calib_status.setStyleSheet(f"font-size:11px;color:{COLORS['g2']};font-weight:600;")
+                    # Automatisch calibrate.py ausführen
+                    import subprocess, sys
+                    def _run_calibrate():
+                        try:
+                            proc = subprocess.run(
+                                [sys.executable, str(Path("~/anthro3d/calibrate.py").expanduser())],
+                                capture_output=True, text=True, timeout=120)
+                            if proc.returncode == 0:
+                                self.auto_calib_status.setText("✓ Kalibrierung + Hintergrund komplett!")
+                            else:
+                                self.auto_calib_status.setText(f"⚠ calibrate.py Fehler: {proc.stderr[-100:]}")
+                        except Exception as e:
+                            self.auto_calib_status.setText(f"⚠ {e}")
+                    import threading
+                    threading.Thread(target=_run_calibrate, daemon=True).start()
                 else:
                     self.auto_calib_status.setText("⚠ Keine Erkennung — Boards ausrichten!")
                     self.auto_calib_status.setStyleSheet("font-size:11px;color:#c04040;")
@@ -1802,16 +1817,17 @@ cap_l.release(); cap_r.release()
         except Exception:
             elps = []
 
-        # Kalibrierungsstatus laden
-        stereo_cfg_path = Path("~/anthro3d/stereo_config.yaml").expanduser()
+        # Kalibrierungsstatus laden (beide ELP Configs prüfen)
         calibrated = {}
-        if stereo_cfg_path.exists():
-            try:
-                import yaml as _yaml
-                sc = _yaml.safe_load(open(stereo_cfg_path))
-                calibrated = sc.get("calibrated_elps", {})
-            except Exception:
-                pass
+        import yaml as _yaml
+        for _cfg_name in ["stereo_config.yaml", "stereo_config_elp1.yaml"]:
+            _p = Path(f"~/anthro3d/{_cfg_name}").expanduser()
+            if _p.exists():
+                try:
+                    sc = _yaml.safe_load(open(_p))
+                    calibrated.update(sc.get("calibrated_elps", {}))
+                except Exception:
+                    pass
 
         # Dialog — eine ELP auswählen
         dlg = QDialog(self)
@@ -1870,7 +1886,7 @@ cap_l.release(); cap_r.release()
             frame_ready = _Signal(object)
             finished = _Signal(bool, str)
 
-            def __init__(self, elp_index, elp_name, target=50):
+            def __init__(self, elp_index, elp_name, target=80):
                 super().__init__()
                 self.elp_index = elp_index
                 self.elp_name  = elp_name
@@ -1892,23 +1908,36 @@ cap_l.release(); cap_r.release()
 
                 # Geführte Positionen
                 POSITIONS = [
-                    ("Mitte — nah (30cm)",       (640, 300), 0),
-                    ("Mitte — mittel (60cm)",     (640, 300), 0),
-                    ("Mitte — weit (100cm)",      (640, 300), 0),
-                    ("Links oben",                (200, 100), 0),
-                    ("Rechts oben",               (1100, 100), 0),
-                    ("Links unten",               (200, 500), 0),
-                    ("Rechts unten",              (1100, 500), 0),
-                    ("Mitte — links kippen 20°",  (640, 300), -20),
-                    ("Mitte — rechts kippen 20°", (640, 300), 20),
-                    ("Mitte — oben kippen 20°",   (640, 300), 20),
-                    ("Mitte — unten kippen 20°",  (640, 300), -20),
-                    ("Links oben — kippen",       (200, 100), 15),
-                    ("Rechts oben — kippen",      (1100, 100), -15),
-                    ("Links unten — kippen",      (200, 500), -15),
-                    ("Rechts unten — kippen",     (1100, 500), 15),
-                    ("Ganz nah (20cm)",           (640, 300), 0),
-                    ("Sehr weit (150cm)",         (640, 300), 0),
+                    ("Mitte — nah (30cm)",          (640, 300), 0),
+                    ("Links oben",                   (200, 100), 0),
+                    ("Rechts oben",                  (1100, 100), 0),
+                    ("Links unten",                  (200, 500), 0),
+                    ("Rechts unten",                 (1100, 500), 0),
+                    ("Mitte — mittel (60cm)",        (640, 300), 0),
+                    ("Links oben — kippen",          (200, 100), 20),
+                    ("Rechts oben — kippen",         (1100, 100), -20),
+                    ("Links unten — kippen",         (200, 500), -20),
+                    ("Rechts unten — kippen",        (1100, 500), 20),
+                    ("Mitte — links kippen 30°",     (640, 300), -30),
+                    ("Mitte — rechts kippen 30°",    (640, 300), 30),
+                    ("Mitte — weit (100cm)",         (640, 300), 0),
+                    ("Links Mitte",                  (150, 300), 10),
+                    ("Rechts Mitte",                 (1150, 300), -10),
+                    ("Oben Mitte",                   (640, 80), 0),
+                    ("Unten Mitte",                  (640, 550), 0),
+                    ("Ganz nah (20cm)",              (640, 300), 0),
+                    ("Links oben nah",               (200, 100), 25),
+                    ("Rechts unten nah",             (1100, 500), -25),
+                    ("Sehr weit (150cm)",            (640, 300), 0),
+                    ("Links oben weit",              (200, 100), 0),
+                    ("Rechts unten weit",            (1100, 500), 0),
+                    ("Mitte kippen diagonal",        (640, 300), 45),
+                    ("Mitte kippen diagonal 2",      (640, 300), -45),
+                    ("Links unten weit",             (150, 500), 15),
+                    ("Rechts oben weit",             (1150, 80), -15),
+                    ("Mitte — sehr nah (15cm)",      (640, 300), 0),
+                    ("Oben links kippen stark",      (200, 80), 35),
+                    ("Unten rechts kippen stark",    (1100, 550), -35),
                 ]
 
                 def draw_guide(img, pos_label, target_x, target_y, angle, detected, count, total):
@@ -1956,11 +1985,12 @@ cap_l.release(); cap_r.release()
                         all_cl.append(ccl);all_il.append(cil);all_cr.append(ccr);all_ir.append(cir)
                         count+=1
                         self.progress.emit(count)
-                        pos_idx = min(pos_idx+1, len(POSITIONS)-1)
+                        pos_idx = (pos_idx+1) % len(POSITIONS)
                         self.msleep(600)
                     # Guide zeichnen
                     p_label, (px,py), p_angle = POSITIONS[min(pos_idx, len(POSITIONS)-1)]
                     fl = draw_guide(fl, p_label, px, py, p_angle, ok_l and ok_r, count, self.target)
+                    fr = draw_guide(fr, p_label, px, py, p_angle, ok_l and ok_r, count, self.target)
                     disp = _np.hstack([_cv2.resize(fl,(800,480)),_cv2.resize(fr,(800,480))])
                     self.frame_ready.emit(disp)
                     if count >= self.target: break
@@ -2064,7 +2094,7 @@ board      = cv2.aruco.CharucoBoard((6,9), 0.025, 0.018, aruco_dict)
 detector   = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
 ELP_INDEX = __ELP_INDEX__
 ELP_NAME  = "__ELP_NAME__"
-TARGET = 50
+TARGET = 80
 PROGRESS_FILE = "/tmp/stereo_progress.txt"
 cap = cv2.VideoCapture(ELP_INDEX)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3200)
@@ -2399,9 +2429,15 @@ if count>=5:
             else:
                 combo.setCurrentIndex(4)  # Nicht verwendet
             row_lay.addWidget(combo)
+
+            # ArUco Status Label
+            aruco_lbl = QLabel("—")
+            aruco_lbl.setFixedWidth(180)
+            aruco_lbl.setStyleSheet(f"font-size:10px;color:{COLORS['dim']};")
+            row_lay.addWidget(aruco_lbl)
             row_lay.addStretch()
 
-            self.setup_rows.append({'preview': preview, 'res': res_lbl, 'combo': combo, 'index': i, 'idx_lbl': idx_lbl, 'frame': row})
+            self.setup_rows.append({'preview': preview, 'res': res_lbl, 'combo': combo, 'index': i, 'idx_lbl': idx_lbl, 'frame': row, 'aruco_lbl': aruco_lbl})
             grid_lay.addWidget(row)
 
         grid_lay.addStretch()
@@ -2557,6 +2593,48 @@ if count>=5:
             row['preview'].setPixmap(QPixmap.fromImage(qimg))
             row['preview'].setText("")
 
+            # ArUco-Erkennung auf vollem Frame
+            role = row['combo'].currentText()
+            required = {'ELP2':[2,3],'ELP1':[2,10],'OV9281 L':[3,10],'OV9281 R':[3,10]}.get(role)
+            if required and 'aruco_lbl' in row:
+                try:
+                    import cv2 as _cv2
+                    _aruco_dict = _cv2.aruco.getPredefinedDictionary(_cv2.aruco.DICT_ARUCO_ORIGINAL)
+                    _params = _cv2.aruco.DetectorParameters()
+                    _params.minMarkerPerimeterRate = 0.05  # Mindestgröße
+                    _params.maxMarkerPerimeterRate = 0.5
+                    _detector = _cv2.aruco.ArucoDetector(_aruco_dict, _params)
+                    VALID_IDS = {2, 3, 10}  # Nur Stativ-Marker
+                    cap2 = self.setup_caps.get(i)
+                    if cap2:
+                        _ret, _fr = cap2.read()
+                        if _ret:
+                            _disp = _fr[:, :_fr.shape[1]//2] if _fr.shape[1] > 1600 else _fr
+                            _gray = _cv2.cvtColor(_disp, _cv2.COLOR_BGR2GRAY)
+                            _, _ids, _ = _detector.detectMarkers(_gray)
+                            # Nur valide Marker (bekannte IDs + Mindestgröße)
+                            _seen = []
+                            if _ids is not None:
+                                for _c, _mid in zip(_corners, _ids.flatten()):
+                                    if int(_mid) not in VALID_IDS: continue
+                                    _pts = _c[0]
+                                    _area = _cv2.contourArea(_pts)
+                                    if _area < 80*80: continue
+                                    _w = float(np.linalg.norm(_pts[0]-_pts[1]))
+                                    _h = float(np.linalg.norm(_pts[1]-_pts[2]))
+                                    if _h > 0 and 0.7 < _w/_h < 1.3:
+                                        _seen.append(int(_mid))
+                            _ok = all(r in _seen for r in required)
+                            _text = f"✓ ID {_seen}" if _ok else f"✗ fehlt {[r for r in required if r not in _seen]}"
+                            _color = COLORS['g1'] if _ok else '#E05252'
+                            row['aruco_lbl'].setText(_text)
+                            row['aruco_lbl'].setStyleSheet(f"font-size:10px;color:{_color};font-weight:{'600' if _ok else '400'};")
+                except Exception:
+                    pass
+            elif 'aruco_lbl' in row and row['combo'].currentText() == 'Nicht verwendet':
+                row['aruco_lbl'].setText("—")
+                row['aruco_lbl'].setStyleSheet(f"font-size:10px;color:{COLORS['dim']};")
+
     def eventFilter(self, obj, event):
         from PyQt6.QtCore import QEvent
         if event.type() == QEvent.Type.MouseButtonPress:
@@ -2575,8 +2653,10 @@ if count>=5:
         dlg.resize(820, 640)
         dlg.setStyleSheet("background:#111;")
         vlay = QVBoxLayout(dlg); vlay.setContentsMargins(8,8,8,8); vlay.setSpacing(6)
-        lbl = _QL(); lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl = _QL()
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         lbl.setStyleSheet("background:#000;border-radius:4px;")
+        lbl.setScaledContents(False)
         vlay.addWidget(lbl, 1)
         info = _QL("ArUco: —"); info.setStyleSheet("color:#1D9E75;font-size:12px;font-weight:600;")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2595,8 +2675,27 @@ if count>=5:
             if not cap or not cap.isOpened(): return
             ret, frame = cap.read()
             if not ret: return
-            disp = frame[:, :frame.shape[1]//2].copy() if frame.shape[1] > 1600 else frame.copy()
-            gray = _cv2.cvtColor(disp, _cv2.COLOR_BGR2GRAY)
+            # ELP: L+R nebeneinander anzeigen, OV9281/Webcam: volles Bild
+            if frame.shape[1] > 1600:
+                fl = frame[:, :frame.shape[1]//2]
+                fr = frame[:, frame.shape[1]//2:]
+                # Beide Hälften verkleinern und nebeneinander zeigen
+                h = fl.shape[0]
+                fl_s = _cv2.resize(fl, (640, int(640*h/fl.shape[1])))
+                fr_s = _cv2.resize(fr, (640, int(640*h/fr.shape[1])))
+                sep = _np.zeros((fl_s.shape[0], 4, 3), dtype=_np.uint8)
+                disp = _np.hstack([fl_s, sep, fr_s])
+            else:
+                disp = frame.copy()
+            # Sicherstellen dass Bild nicht zu groß für Fenster
+            max_w, max_h = 800, 560
+            h, w = disp.shape[:2]
+            if w > max_w or h > max_h:
+                scale = min(max_w/w, max_h/h)
+                disp = cv2.resize(disp, (int(w*scale), int(h*scale)))
+            # ArUco: bei ELP nur linke Hälfte, sonst volles Bild
+            aruco_frame = disp[:, :disp.shape[1]//2] if disp.shape[1] > 1600 else disp
+            gray = _cv2.cvtColor(aruco_frame, _cv2.COLOR_BGR2GRAY)
             corners, ids, _ = detector.detectMarkers(gray)
             if ids is not None:
                 _cv2.aruco.drawDetectedMarkers(disp, corners, ids)
