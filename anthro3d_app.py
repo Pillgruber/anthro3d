@@ -2040,7 +2040,8 @@ cap_l.release(); cap_r.release()
                                    "R":R.tolist(),"T":T.tolist(),
                                    "calibrated_elps":{self.elp_name:True},
                                    "calibrated_indices":[self.elp_index]}
-                            with open(str(base/"stereo_config.yaml"),"w") as f: _y.dump(cfg,f)
+                            cfg_name = "stereo_config.yaml" if self.elp_index == 0 else "stereo_config_elp1.yaml"
+                            with open(str(base/cfg_name),"w") as f: _y.dump(cfg,f)
                             self.finished.emit(True, self.elp_name)
                             return
                     except Exception as e:
