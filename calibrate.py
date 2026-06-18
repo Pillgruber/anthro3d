@@ -16,18 +16,22 @@ with open(Path("~/anthro3d/stereo_config_ov9281.yaml").expanduser()) as f:
 R_rel_elp1 = np.load(Path("~/anthro3d/R_rel_elp1_to_elp2.npy").expanduser())
 T_rel_elp1 = np.load(Path("~/anthro3d/T_rel_elp1_to_elp2.npy").expanduser()) * 100
 
-def make_maps(cfg, size=(1600,1200)):
+def make_maps(cfg, size=(1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha=0.5, return_R1=False):
     K_l=np.array(cfg['camera_matrix_l']); d_l=np.array(cfg['dist_l'])
     K_r=np.array(cfg['camera_matrix_r']); d_r=np.array(cfg['dist_r'])
     R=np.array(cfg['R']); T=np.array(cfg['T'])
-    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,alpha=0.5)
+    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,flags=flags,alpha=alpha)
     ml1,ml2=cv2.initUndistortRectifyMap(K_l,d_l,R1,P1,size,cv2.CV_32F)
     mr1,mr2=cv2.initUndistortRectifyMap(K_r,d_r,R2,P2,size,cv2.CV_32F)
-    return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0])
+    out = (ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0]))
+    if return_R1:
+        return out + (R1,)
+    return out
 
 ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2 = make_maps(cfg2)
 ml1_1,ml1_2,mr1_1,mr1_2,fx1,cx1,cy1,bl1 = make_maps(cfg1)
-mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov = make_maps(cfgov,(1280,800))
+mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov,R1_ov = make_maps(cfgov,(1280,800), flags=0, alpha=-1, return_R1=True)
+print(f"OV9281 Rectify Kalibrierung: fx={fxov:.1f} cx={cxov:.1f} cy={cyov:.1f} baseline={blov*100:.1f}cm flags=0")
 
 lm=cv2.StereoSGBM_create(minDisparity=4,numDisparities=128,blockSize=9,
     P1=8*3*81,P2=32*3*81,disp12MaxDiff=1,uniquenessRatio=10,
@@ -280,7 +284,13 @@ for fi in range(N_FRAMES):
             dl=lm_ov.compute(gl,gr); dr=rm_ov.compute(gr,gl)
             dov=wls_ov.filter(dl,fl,disparity_map_right=dr).astype(np.float32)/16.0
             dov[dov<4]=0
-            p=disp_to_pts(dov,fxov,cxov,cyov,blov,R_rel_ov,T_rel_ov)
+            p=disp_to_pts(dov,fxov,cxov,cyov,blov)
+            if p is not None:
+                # OV9281-Hintergrundpunkte an scan3d.py angleichen:
+                # Rectified Stereo zurückdrehen, Achsen korrigieren, dann nach ELP2 transformieren.
+                pov_raw = (R1_ov.T @ p.T).T
+                flip_ov = np.array([-1.0, 1.0, -1.0], dtype=float).reshape(1, 3)
+                p = (R_rel_ov.T @ (pov_raw * flip_ov).T).T + T_rel_ov.reshape(1, 3)
             if p is not None: frame_pts.append(p)
     if frame_pts:
         all_p = np.vstack(frame_pts)
