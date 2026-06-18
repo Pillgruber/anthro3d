@@ -14,7 +14,7 @@ with open(Path("~/anthro3d/stereo_config_ov9281.yaml").expanduser()) as f:
     cfgov = yaml.safe_load(f)
 
 R_rel_elp1 = np.load(Path("~/anthro3d/R_rel_elp1_to_elp2.npy").expanduser())
-T_rel_elp1 = np.load(Path("~/anthro3d/T_rel_elp1_to_elp2.npy").expanduser())
+T_rel_elp1 = np.load(Path("~/anthro3d/T_rel_elp1_to_elp2.npy").expanduser()) * 100
 
 def make_maps(cfg, size=(1600,1200)):
     K_l=np.array(cfg['camera_matrix_l']); d_l=np.array(cfg['dist_l'])
@@ -147,7 +147,7 @@ print("Scan-Korridor wird berechnet...")
 # Kamerapositionen im ELP2-Koordinatensystem
 cam_positions = np.array([
     [0.0, 0.0, 0.0],          # ELP2 = Ursprung
-    T_rel_elp1,                 # ELP1
+        T_rel_elp1.flatten(),      # ELP1
 ])
 if OV_OK:
     cam_positions = np.vstack([cam_positions, T_rel_ov])
@@ -246,7 +246,7 @@ def disp_to_pts(d, fx, cx, cy, bl, R_rel=None, T_rel=None):
     zm=(Z>0.3)&(Z<5.0)
     pts=pts[zm]
     if R_rel is not None and len(pts)>0:
-        pts=(R_rel@pts.T).T+T_rel
+        pts=(R_rel@pts.T).T+T_rel.flatten()
     return pts
 
 # Viele Frames aufnehmen — Personen bewegen sich, Hintergrund bleibt stabil
@@ -307,6 +307,34 @@ if stable_keys:
 else:
     bg_pts = np.zeros((0,3))
     print("  ⚠ Keine stabilen Voxels gefunden")
+
+# Hintergrund-Scanbox begrenzen
+# Entfernt unrealistische Ausreißer, bevor bg_pts gespeichert wird.
+# Werte sind in Metern. ELP2 bleibt Weltursprung.
+if bg_pts is not None and len(bg_pts) > 0:
+    before_bg_box = len(bg_pts)
+
+    bg_box = (
+        (bg_pts[:,0] > -2.50) & (bg_pts[:,0] < 2.50) &
+        (bg_pts[:,1] > -3.00) & (bg_pts[:,1] < 1.50) &
+        (bg_pts[:,2] > 0.20) & (bg_pts[:,2] < 5.50)
+    )
+
+    bg_pts = bg_pts[bg_box]
+
+    print(
+        f"  Hintergrund-Scanbox: {before_bg_box} → {len(bg_pts)} Punkte | "
+        f"X=-250..250cm Y=-300..150cm Z=20..550cm"
+    )
+
+    if len(bg_pts) > 0:
+        print(
+            f"  bg_pts Bereich nach Scanbox: "
+            f"X={bg_pts[:,0].min()*100:.0f}..{bg_pts[:,0].max()*100:.0f}cm "
+            f"Y={bg_pts[:,1].min()*100:.0f}..{bg_pts[:,1].max()*100:.0f}cm "
+            f"Z={bg_pts[:,2].min()*100:.0f}..{bg_pts[:,2].max()*100:.0f}cm"
+        )
+
 
 # Alles speichern
 out=Path("~/anthro3d/calibration_bg.npz").expanduser()

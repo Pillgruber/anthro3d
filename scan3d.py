@@ -132,18 +132,19 @@ with open(Path("~/anthro3d/stereo_config_elp1.yaml").expanduser()) as f:
 with open(Path("~/anthro3d/stereo_config_ov9281.yaml").expanduser()) as f:
     cfgov = yaml.safe_load(f)
 
-def make_maps_split(cfg, size=(1600,1200)):
+def make_maps_split(cfg, size=(1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha=0):
     K_l=np.array(cfg['camera_matrix_l']); d_l=np.array(cfg['dist_l'])
     K_r=np.array(cfg['camera_matrix_r']); d_r=np.array(cfg['dist_r'])
     R=np.array(cfg['R']); T=np.array(cfg['T'])
-    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,alpha=0)
+    R1,R2,P1,P2,Q,_,_=cv2.stereoRectify(K_l,d_l,K_r,d_r,size,R,T,flags=flags,alpha=alpha)
     ml1,ml2=cv2.initUndistortRectifyMap(K_l,d_l,R1,P1,size,cv2.CV_32F)
     mr1,mr2=cv2.initUndistortRectifyMap(K_r,d_r,R2,P2,size,cv2.CV_32F)
-    return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0])
+    return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0]),R1
 
-ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2 = make_maps_split(cfg2, (1600,1200))
-ml1_1,ml1_2,mr1_1,mr1_2,fx1,cx1,cy1,bl1 = make_maps_split(cfg1, (1600,1200))
-mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov = make_maps_split(cfgov, (1280,800))
+ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2,R1_2 = make_maps_split(cfg2, (1600,1200))
+ml1_1,ml1_2,mr1_1,mr1_2,fx1,cx1,cy1,bl1,R1_1 = make_maps_split(cfg1, (1600,1200))
+mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov,R1_ov = make_maps_split(cfgov, (1280,800), flags=0, alpha=-1)
+print(f"OV9281 Rectify aktiv: fx={fxov:.1f} cx={cxov:.1f} cy={cyov:.1f} baseline={blov*100:.1f}cm flags=0")
 
 # ELP1→ELP2 laden
 R_rel_elp1 = np.load(Path("~/anthro3d/R_rel_elp1_to_elp2.npy").expanduser())
@@ -287,6 +288,50 @@ def get_mask(disp, bg, stable, cx_img, cy_img):
         if s<best_s: best_s=s; best=i
     return (labels==best).astype(np.uint8)*255 if best>0 else raw
 
+
+def refine_person_mask_with_depth(mask, disp, bg_disp, name="cam", min_keep=800):
+    """
+    Verfeinert die Personenmaske mit dem gespeicherten Hintergrund.
+    Behalten werden nur Pixel, die zur Person gehören und vor dem Hintergrund liegen.
+    """
+    if mask is None or disp is None or bg_disp is None:
+        return mask
+
+    try:
+        if bg_disp.shape != disp.shape:
+            bg = cv2.resize(bg_disp, (disp.shape[1], disp.shape[0]), interpolation=cv2.INTER_NEAREST)
+        else:
+            bg = bg_disp
+
+        person = mask > 0
+        valid = disp > 4
+
+        # Person ist näher als Hintergrund, daher ist Disparität größer als im Hintergrund.
+        bg_valid = bg > 4
+        closer = valid & bg_valid & ((disp - bg) > 2.0)
+
+        # Falls der Hintergrund an dieser Stelle keinen gültigen Wert hat,
+        # behalten wir den Punkt nur, wenn er in der Personenmaske liegt und gültige Tiefe hat.
+        bg_missing = valid & (~bg_valid)
+
+        refined = person & (closer | bg_missing)
+
+        n_before = int(person.sum())
+        n_after = int(refined.sum())
+
+        if n_after >= min_keep and n_after > n_before * 0.08:
+            print(f"Personenmaske+Tiefe {name}: {n_before} → {n_after} Pixel")
+            return refined.astype(np.uint8) * 255
+
+        print(f"Personenmaske+Tiefe {name}: übersprungen ({n_before} → {n_after} Pixel)")
+        return mask
+
+    except Exception as e:
+        print(f"Personenmaske+Tiefe {name}: Fehler {e}")
+        return mask
+
+
+
 def disp_to_pts(disp, fl, mask, fx, cx, cy, bl):
     rows,ci = np.where(mask>0)
     if len(rows)==0: return None,None
@@ -397,8 +442,13 @@ while True:
         m2 = make_person_mask(fl2, seg2, d2.shape, name="ELP2", min_pixels=800)
         m1 = make_person_mask(fl1, seg1, d1.shape, name="ELP1", min_pixels=800)
 
+        # Personenmaske zusätzlich mit Tiefenänderung gegen den Kalibrier-Hintergrund verfeinern.
+        m2 = refine_person_mask_with_depth(m2, d2, bg2, name="ELP2", min_keep=800)
+        m1 = refine_person_mask_with_depth(m1, d1, bg1, name="ELP1", min_keep=800)
+
         if OV_OK and dov is not None:
             mov = make_person_mask(flov, segov, dov.shape, name="OV9281", min_pixels=300)
+            mov = refine_person_mask_with_depth(mov, dov, bgov, name="OV9281", min_keep=300)
 
         p2,c2   = disp_to_pts(d2,  fl2,  m2,  fx2,  cx2,  cy2,  bl2)
         p1,c1   = disp_to_pts(d1,  fl1,  m1,  fx1,  cx1,  cy1,  bl1)
@@ -429,11 +479,52 @@ while True:
             if pov is not None:
                 print(f"OV9281 Z-Bereich: {pov[:,2].min()*100:.0f}–{pov[:,2].max()*100:.0f}cm")
                 print(f"OV9281 X-Bereich: {pov[:,0].min()*100:.0f}–{pov[:,0].max()*100:.0f}cm")
+                # OV9281-Punkte kommen aus dem rektifizierten Stereo-Koordinatensystem.
+                # Für die ArUco-Transformation müssen sie zurück in das Rohkamera-Koordinatensystem.
+                pov_raw = (R1_ov.T @ pov.T).T
+                print(
+                    f"OV9281 nach Unrectify: "
+                    f"X={pov_raw[:,0].min()*100:.0f} bis {pov_raw[:,0].max()*100:.0f}cm "
+                    f"Y={pov_raw[:,1].min()*100:.0f} bis {pov_raw[:,1].max()*100:.0f}cm "
+                    f"Z={pov_raw[:,2].min()*100:.0f} bis {pov_raw[:,2].max()*100:.0f}cm"
+                )
                 # Z-Clipping: nur Punkte 0.3–3m vor OV9281
-                pov_t = (R_rel_ov @ pov.T).T + T_rel_ov
-                # OV9281 vorerst nur diagnostisch berechnen, aber nicht hinzufügen
-                # parts.append(pov_t); cparts.append(cov_col)
-                print(f"OV9281: {len(pov)} → transformiert, aber aktuell nicht hinzugefügt")
+                # OV9281 in ELP2-Weltkoordinaten transformieren
+                # OV9281 feste Transformation nach erfolgreichem Test
+                # Gefundene passende Variante: R.T*flip(-1,1,-1)+T
+                Tov = T_rel_ov.reshape(1, 3)
+                flip_ov = np.array([-1.0, 1.0, -1.0], dtype=float).reshape(1, 3)
+                pf = pov_raw * flip_ov
+                pov_t = (R_rel_ov.T @ pf.T).T + Tov
+
+                ov_mask = (
+                    (pov_t[:,0] > -1.60) & (pov_t[:,0] < 1.60) &
+                    (pov_t[:,1] > -2.60) & (pov_t[:,1] < 0.90) &
+                    (pov_t[:,2] > 0.35) & (pov_t[:,2] < 4.00)
+                )
+
+                print(
+                    f"OV9281 feste Transformation: "
+                    f"X={pov_t[:,0].min()*100:.0f} bis {pov_t[:,0].max()*100:.0f}cm "
+                    f"Y={pov_t[:,1].min()*100:.0f} bis {pov_t[:,1].max()*100:.0f}cm "
+                    f"Z={pov_t[:,2].min()*100:.0f} bis {pov_t[:,2].max()*100:.0f}cm | "
+                    f"inBox={int(ov_mask.sum())}"
+                )
+
+                before_ov = len(pov_t)
+                pov_t = pov_t[ov_mask]
+                cov_col = cov_col[ov_mask]
+
+                if len(pov_t) > 500:
+                    parts.append(pov_t)
+                    cparts.append(cov_col)
+                    print(
+                        f"OV9281: {before_ov} zu {len(pov_t)} nach Clipping hinzugefügt | "
+                        f"X={pov_t[:,0].min()*100:.0f} bis {pov_t[:,0].max()*100:.0f}cm "
+                        f"Z={pov_t[:,2].min()*100:.0f} bis {pov_t[:,2].max()*100:.0f}cm"
+                    )
+                else:
+                    print(f"OV9281: {before_ov} zu {len(pov_t)} nach Clipping, zu wenig Punkte, nicht hinzugefügt")
         if parts:
             all_pts = np.vstack(parts); all_cols = np.vstack(cparts)
             print(f"Gesamt: {len(all_pts)}")
@@ -454,28 +545,22 @@ if all_pts is not None:
     print("PCA: deaktiviert")
 
     # Kombi-Filter: schwacher Hintergrundfilter plus Human-Shape-Filter
-    print("Kombi-Filter: Scanbox + weicher Hintergrund + Human-Shape")
+    print("Kombi-Filter: Personenmaske + Scanbox + Hintergrund")
 
-    # 1. Grobe Scanbox in Metern.
-    # Wichtig: pts sind in Metern, nicht in Zentimetern.
-    # X = links/rechts, Y = vertikal, Z = Tiefe
-    before = len(pts)
-    scanbox_mask = (
-        (pts[:,0] > -1.50) & (pts[:,0] < 1.50) &
-        (pts[:,1] > -2.40) & (pts[:,1] < 0.60) &
-        (pts[:,2] > 0.45) & (pts[:,2] < 4.00)
+    # 1. Grobe 3D-Scanbox.
+    # Die 2D-Personenmaske ist jetzt der Hauptfilter.
+    before_box = len(pts)
+    scanbox = (
+        (pts[:,0] > -1.60) & (pts[:,0] < 1.60) &
+        (pts[:,1] > -2.60) & (pts[:,1] < 0.90) &
+        (pts[:,2] > 0.35) & (pts[:,2] < 4.00)
     )
+    pts = pts[scanbox]
+    cols = cols[scanbox]
+    print(f"Scanbox: {before_box} → {len(pts)} Punkte")
 
-    if scanbox_mask.sum() > 500:
-        pts = pts[scanbox_mask]
-        cols = cols[scanbox_mask]
-        print(f"Scanbox: {before} → {len(pts)} Punkte")
-    else:
-        print(f"Scanbox übersprungen: nur {scanbox_mask.sum()} Punkte gefunden")
-
-    # 2. Hintergrund-Voxel weich entfernen.
-    # Dein calibration_bg.npz enthält bg_pts und bg_voxel.
-    # Daraus erzeugen wir jetzt beim Scan die Hintergrund-Voxel.
+    # 2. Hintergrund-Voxel entfernen.
+    # Nur noch als zweite Sicherheit, nicht als Hauptfilter.
     cal_path = Path("~/anthro3d/calibration_bg.npz").expanduser()
 
     if cal_path.exists() and len(pts) > 0:
@@ -493,7 +578,7 @@ if all_pts is not None:
 
             remove_ratio = float(bg_mask.mean()) if len(bg_mask) else 0.0
 
-            if 0.01 < remove_ratio < 0.80:
+            if 0.01 < remove_ratio < 0.70:
                 before_bg = len(pts)
                 pts = pts[~bg_mask]
                 cols = cols[~bg_mask]
@@ -505,186 +590,12 @@ if all_pts is not None:
     else:
         print("Hintergrundfilter: calibration_bg.npz nicht gefunden oder keine Punkte")
 
-    # 2b. Zielperson grob isolieren.
-    # Nach Hintergrundentfernung wird der dichteste neue Bereich in X/Z gesucht.
-    # Dadurch bleiben Möbel und Raumflächen eher draußen.
+    # 3. Sehr leichter Visible-Crop.
+    # Entfernt nur extreme Ausreißer.
     if len(pts) > 1000:
-        tmp_mask = (
-            (pts[:,0] > -1.40) & (pts[:,0] < 1.40) &
-            (pts[:,1] > -2.40) & (pts[:,1] < 0.60) &
-            (pts[:,2] > 0.50) & (pts[:,2] < 3.50)
-        )
-        tmp = pts[tmp_mask]
-
-        if len(tmp) > 1000:
-            x_bins = np.arange(-1.40, 1.41, 0.10)
-            z_bins = np.arange(0.50, 3.51, 0.10)
-            hist, x_edges, z_edges = np.histogram2d(tmp[:,0], tmp[:,2], bins=[x_bins, z_bins])
-
-            # einfache 3x3-Glättung ohne scipy
-            hist_s = hist.copy()
-            for dx in (-1, 0, 1):
-                for dz in (-1, 0, 1):
-                    if dx == 0 and dz == 0:
-                        continue
-                    hist_s += np.roll(np.roll(hist, dx, axis=0), dz, axis=1)
-
-            ix, iz = np.unravel_index(np.argmax(hist_s), hist_s.shape)
-            x_center = (x_edges[ix] + x_edges[ix + 1]) / 2
-            z_center = (z_edges[iz] + z_edges[iz + 1]) / 2
-
-            person_box = (
-                (np.abs(pts[:,0] - x_center) < 0.75) &
-                (np.abs(pts[:,2] - z_center) < 0.75) &
-                (pts[:,1] > -2.40) & (pts[:,1] < 0.60)
-            )
-
-            if person_box.sum() > 1000:
-                before_person = len(pts)
-                pts = pts[person_box]
-                cols = cols[person_box]
-                print(f"Zielperson-Box: Zentrum X={x_center*100:.0f}cm Z={z_center*100:.0f}cm | {before_person} → {len(pts)} Punkte")
-            else:
-                print(f"Zielperson-Box übersprungen: nur {person_box.sum()} Punkte")
-        else:
-            print(f"Zielperson-Box übersprungen: nur {len(tmp)} Kandidatenpunkte")
-    else:
-        print("Zielperson-Box übersprungen: zu wenige Punkte")
-
-    # 3. Human-Shape-Filter über zusammenhängende 3D-Cluster
-    def keep_best_human_cluster(pts, cols, voxel=0.08):
-        import numpy as _np
-        from collections import deque
-
-        if pts is None or len(pts) < 500:
-            print("Human-Shape: zu wenige Punkte, übersprungen")
-            return pts, cols
-
-        vox = _np.floor(pts / voxel).astype(_np.int32)
-        uniq, inv = _np.unique(vox, axis=0, return_inverse=True)
-
-        if len(uniq) < 20:
-            print("Human-Shape: zu wenige Voxel, übersprungen")
-            return pts, cols
-
-        occ = {tuple(row): i for i, row in enumerate(uniq)}
-        visited = _np.zeros(len(uniq), dtype=bool)
-        comp_id_vox = _np.full(len(uniq), -1, dtype=_np.int32)
-
-        # Mittlere Cluster-Nachbarschaft: 26er-Nachbarschaft.
-        # Der Körper bleibt dadurch zusammenhängend.
-        neigh = [
-            (dx, dy, dz)
-            for dx in (-1, 0, 1)
-            for dy in (-1, 0, 1)
-            for dz in (-1, 0, 1)
-            if not (dx == 0 and dy == 0 and dz == 0)
-        ]
-
-        comps = []
-
-        for i in range(len(uniq)):
-            if visited[i]:
-                continue
-
-            q = deque([i])
-            visited[i] = True
-            comp = []
-
-            while q:
-                cur = q.popleft()
-                comp.append(cur)
-                x, y, z = uniq[cur]
-
-                for dx, dy, dz in neigh:
-                    nb = (int(x + dx), int(y + dy), int(z + dz))
-                    j = occ.get(nb)
-
-                    if j is not None and not visited[j]:
-                        visited[j] = True
-                        q.append(j)
-
-            if len(comp) >= 4:
-                cid = len(comps)
-                comps.append(comp)
-                comp_id_vox[comp] = cid
-
-        if not comps:
-            print("Human-Shape: keine Cluster gefunden")
-            return pts, cols
-
-        point_comp = comp_id_vox[inv]
-
-        best_score = -1.0
-        best_idx = None
-        best_info = None
-
-        for cid in range(len(comps)):
-            idx = _np.flatnonzero(point_comp == cid)
-
-            if len(idx) < 500:
-                continue
-
-            cp = pts[idx]
-            mn = cp.min(axis=0)
-            mx = cp.max(axis=0)
-            size = mx - mn
-
-            width = float(size[0])
-            height = float(size[1])
-            depth = float(size[2])
-            center = cp.mean(axis=0)
-
-            score = float(len(idx))
-
-            # Visible-Body-Plausibilität:
-            # Es muss nicht der ganze Mensch sichtbar sein.
-            # Auch Oberkörper, Rücken, Kopf, Beine oder Teilflächen sind erlaubt.
-            if height < 0.20:
-                score *= 0.25
-            if height > 2.40:
-                score *= 0.20
-            if width > 1.40:
-                score *= 0.25
-            if depth > 1.50:
-                score *= 0.25
-
-            # Mitte der Scanbox bevorzugen
-            score *= 1.0 / (1.0 + abs(float(center[0])) * 0.8)
-
-            # Große Raumflächen stark abwerten.
-            # Kleine Körperausschnitte bleiben erlaubt.
-            if width > 1.80 or depth > 2.00:
-                score *= 0.05
-
-            if score > best_score:
-                best_score = score
-                best_idx = idx
-                best_info = (len(idx), width, height, depth, center)
-
-        if best_idx is None:
-            print("Human-Shape: kein passender Cluster, behalte aktuelle Punkte")
-            return pts, cols
-
-        n, width, height, depth, center = best_info
-
-        print(
-            f"Human-Shape: Cluster behalten: {n} Punkte | "
-            f"B={width*100:.0f}cm H={height*100:.0f}cm T={depth*100:.0f}cm | "
-            f"Zentrum X={center[0]*100:.0f}cm Z={center[2]*100:.0f}cm"
-        )
-
-        return pts[best_idx], cols[best_idx]
-
-    pts, cols = keep_best_human_cluster(pts, cols, voxel=0.06)
-
-    # 4. Visible-Body-Crop:
-    # Nur extreme Ausreißer entfernen.
-    # Sichtbare Körperteile bleiben erhalten, auch wenn der ganze Körper nicht im Bild ist.
-    if len(pts) > 1000:
-        x1, x2 = np.percentile(pts[:,0], [0.5, 99.5])
-        y1, y2 = np.percentile(pts[:,1], [0.1, 99.9])
-        z1, z2 = np.percentile(pts[:,2], [0.5, 99.5])
+        x1, x2 = np.percentile(pts[:,0], [0.2, 99.8])
+        y1, y2 = np.percentile(pts[:,1], [0.2, 99.8])
+        z1, z2 = np.percentile(pts[:,2], [0.2, 99.8])
 
         crop = (
             (pts[:,0] >= x1) & (pts[:,0] <= x2) &
@@ -694,56 +605,17 @@ if all_pts is not None:
 
         before_crop = len(pts)
 
-        if crop.sum() > before_crop * 0.80:
+        if crop.sum() > before_crop * 0.85:
             pts = pts[crop]
             cols = cols[crop]
             print(
-                f"Visible-Body-Crop: {before_crop} → {len(pts)} Punkte | "
+                f"Visible-Crop leicht: {before_crop} → {len(pts)} Punkte | "
                 f"B={(x2-x1)*100:.0f}cm H={(y2-y1)*100:.0f}cm T={(z2-z1)*100:.0f}cm"
             )
         else:
-            print(f"Visible-Body-Crop übersprungen: würde zu viel entfernen ({crop.sum()} von {before_crop})")
-
-    # 5. Front-Surface-Filter:
-    # Pro X/Y-Zelle werden nur die vorderen sichtbaren Punkte behalten.
-    # Das reduziert Wandflächen hinter dem Körper.
-    if len(pts) > 1000:
-        grid = 0.04      # 4 cm Raster
-        thickness = 0.18 # 18 cm sichtbare Oberflächentiefe
-
-        xy = np.floor(pts[:, [0,1]] / grid).astype(np.int32)
-        keys = xy[:,0].astype(np.int64) * 1000000 + xy[:,1].astype(np.int64)
-
-        order = np.argsort(keys)
-        keys_s = keys[order]
-        z_s = pts[order, 2]
-
-        keep_sorted = np.zeros(len(pts), dtype=bool)
-
-        start_i = 0
-        while start_i < len(keys_s):
-            end_i = start_i + 1
-            while end_i < len(keys_s) and keys_s[end_i] == keys_s[start_i]:
-                end_i += 1
-
-            block_idx = order[start_i:end_i]
-            block_z = pts[block_idx, 2]
-            z_min = block_z.min()
-
-            keep_sorted[block_idx] = block_z <= z_min + thickness
-            start_i = end_i
-
-        before_front = len(pts)
-
-        if keep_sorted.sum() > before_front * 0.25:
-            pts = pts[keep_sorted]
-            cols = cols[keep_sorted]
-            print(f"Front-Surface: {before_front} → {len(pts)} Punkte")
-        else:
-            print(f"Front-Surface übersprungen: würde zu viel entfernen ({keep_sorted.sum()} von {before_front})")
+            print(f"Visible-Crop übersprungen: würde zu viel entfernen ({crop.sum()} von {before_crop})")
 
     print(f"Kombi-Filter Ergebnis: {len(pts)} Punkte")
-
 
     # Voxel-Fusion: nahe Punkte aus mehreren Kameras zu einer gemeinsamen Wolke mitteln
     if len(pts) > 1000:
