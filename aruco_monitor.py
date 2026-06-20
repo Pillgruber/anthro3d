@@ -46,9 +46,9 @@ class ArucoMonitor:
     }
 
     EXPECTED_BASELINE_M = {
-        "ELP2": 0.0588,
-        "ELP1": 0.0588,
-        "OV9281": 0.0819,
+        "ELP2": 0.0600,
+        "ELP1": 0.0600,
+        "OV9281": 0.0800,
     }
 
     BASELINE_WARN_REL_DIFF = 0.25
