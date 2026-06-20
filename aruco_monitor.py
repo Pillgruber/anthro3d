@@ -35,7 +35,7 @@ class ArucoMonitor:
     scan3d.py muss fertige Frames an update(...) übergeben.
     """
 
-    MARKER_SIZE_M = 0.19
+    MARKER_SIZE_M = 0.18
 
     KNOWN_MARKER_IDS = {2, 3, 10}
 
