@@ -1631,7 +1631,7 @@ class MainWindow(QMainWindow):
         params = cv2.aruco.DetectorParameters()
         params.minMarkerPerimeterRate = 0.05
         detector = cv2.aruco.ArucoDetector(aruco_dict, params)
-        MARKER_SIZE = 0.19
+        MARKER_SIZE = 0.18
         K = np.array([[1400,0,960],[0,1400,540],[0,0,1]], dtype=np.float64)
         dist_c = np.zeros((4,1))
 
@@ -1722,23 +1722,12 @@ class MainWindow(QMainWindow):
                               'cameras': result}
                     with open(Path("~/anthro3d/cam_positions.yaml").expanduser(), 'w') as f:
                         yaml.dump(config, f, default_flow_style=False)
-                    self.auto_calib_status.setText(f"✓ Gespeichert — {len(result)} Kameras — Hintergrund wird aufgenommen...")
+                    self.auto_calib_status.setText(f"✓ Positions-Kalibrierung gespeichert — {len(result)} Kameras — kein Hintergrund")
                     self.auto_calib_status.setStyleSheet(f"font-size:11px;color:{COLORS['g2']};font-weight:600;")
-                    # Automatisch calibrate.py ausführen
-                    import subprocess, sys
-                    def _run_calibrate():
-                        try:
-                            proc = subprocess.run(
-                                [sys.executable, str(Path("~/anthro3d/calibrate.py").expanduser())],
-                                capture_output=True, text=True, timeout=120)
-                            if proc.returncode == 0:
-                                self.auto_calib_status.setText("✓ Kalibrierung + Hintergrund komplett!")
-                            else:
-                                self.auto_calib_status.setText(f"⚠ calibrate.py Fehler: {proc.stderr[-100:]}")
-                        except Exception as e:
-                            self.auto_calib_status.setText(f"⚠ {e}")
-                    import threading
-                    threading.Thread(target=_run_calibrate, daemon=True).start()
+                    # Positions-Kalibrierung endet hier bewusst.
+                    # calibrate.py wird NICHT automatisch gestartet.
+                    # Dadurch wird kein Hintergrund aufgenommen.
+
                 else:
                     self.auto_calib_status.setText("⚠ Keine Erkennung — Boards ausrichten!")
                     self.auto_calib_status.setStyleSheet("font-size:11px;color:#c04040;")
