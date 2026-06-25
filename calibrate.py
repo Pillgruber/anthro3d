@@ -82,8 +82,8 @@ params=cv2.aruco.DetectorParameters()
 params.minMarkerPerimeterRate=0.05  # Mindestgröße ~80px bei 1600px Bild
 params.maxMarkerPerimeterRate=0.5   # Maxgröße
 detector=cv2.aruco.ArucoDetector(aruco_dict,params)
-MARKER_SIZE = 0.18
-VALID_IDS={2,3,10}          # Nur bekannte Stativ-Marker
+MARKER_SIZE = 0.1865
+VALID_IDS={2,3,4,20,30,40}          # Nur bekannte Stativ-Marker
 MAX_DIST=5.0                # Max 5m Entfernung
 MIN_AREA=80*80              # Mindest-Pixelfläche
 

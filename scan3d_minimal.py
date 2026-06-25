@@ -155,7 +155,7 @@ print(f"ELP1→ELP2 T: {T_rel_elp1*100} cm")
 # ELP2 sieht ID 10, OV9281-L sieht ID 10
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
 detector = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
-MARKER_SIZE = 0.19
+MARKER_SIZE = 0.1865
 obj_pts = np.array([[-MARKER_SIZE/2, MARKER_SIZE/2,0],
                     [ MARKER_SIZE/2, MARKER_SIZE/2,0],
                     [ MARKER_SIZE/2,-MARKER_SIZE/2,0],
@@ -182,7 +182,7 @@ capovL_cal.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovL_cal.set(cv2.CAP_PROP_FRAME
 from pathlib import Path as _Path
 import time as _time
 
-KNOWN_MARKER_IDS = {2, 3, 10}
+KNOWN_MARKER_IDS = {2, 3, 4, 20, 30, 40}
 
 EXPECTED_VISIBLE_MARKERS = {
     "ELP2": {2, 3},

@@ -615,7 +615,7 @@ class CameraThread(QThread):
         self.landmarker = None
         self.cap_l = self.cap_r = None
         self.timestamp_ms = 0
-        self.aruco_dict   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.aruco_dict   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
         self.aruco_params = cv2.aruco.DetectorParameters()
         self.aruco_det    = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
         self.fps_val   = 0.0
@@ -1034,7 +1034,7 @@ class CalibThread(QThread):
         params.errorCorrectionRate    = 0.5
         self.detector     = cv2.aruco.ArucoDetector(self.aruco_dict, params)
         self.PATIENT_ID   = 16
-        self.MARKER_SIZE  = 0.19
+        self.MARKER_SIZE  = 0.1865
         self.K            = np.array([[1400,0,960],[0,1400,540],[0,0,1]], dtype=np.float64)
         self.dist         = np.zeros((4,1))
         self.cam_map      = {}
@@ -1631,7 +1631,7 @@ class MainWindow(QMainWindow):
         params = cv2.aruco.DetectorParameters()
         params.minMarkerPerimeterRate = 0.05
         detector = cv2.aruco.ArucoDetector(aruco_dict, params)
-        MARKER_SIZE = 0.18
+        MARKER_SIZE = 0.1865
         K = np.array([[1400,0,960],[0,1400,540],[0,0,1]], dtype=np.float64)
         dist_c = np.zeros((4,1))
 
@@ -1672,7 +1672,7 @@ class MainWindow(QMainWindow):
                 for c, mid in zip(corners, ids.flatten()):
                     mid = int(mid)
                     if mid == own_id: continue  # eigenes Board überspringen
-                    if mid not in [2, 3, 10]: continue
+                    if mid not in [2, 3, 4, 20, 30, 40]: continue
                     detected_now[name] = True
                     sv = MARKER_SIZE / 2
                     obj = np.array([[-sv,sv,0],[sv,sv,0],[sv,-sv,0],[-sv,-sv,0]], dtype=np.float32)
@@ -1885,7 +1885,7 @@ cap_l.release(); cap_r.release()
             def stop(self): self._stop = True
 
             def run(self):
-                aruco_dict = _cv2.aruco.getPredefinedDictionary(_cv2.aruco.DICT_4X4_50)
+                aruco_dict = _cv2.aruco.getPredefinedDictionary(_cv2.aruco.DICT_ARUCO_ORIGINAL)
                 board      = _cv2.aruco.CharucoBoard((9,6), 0.020, 0.015, aruco_dict)
                 detector   = _cv2.aruco.ArucoDetector(aruco_dict, _cv2.aruco.DetectorParameters())
                 cap = _cv2.VideoCapture(self.elp_index)
@@ -2079,7 +2079,7 @@ cap_l.release(); cap_r.release()
     def _create_stereo_script(self, path, elp_index=0, elp_name="ELP"):
         """Erstellt stereo_charuco_calib.py — ELP Bild wird in L/R gesplittet."""
         script = """import cv2, numpy as np, yaml, time
-aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
 board      = cv2.aruco.CharucoBoard((6,9), 0.025, 0.018, aruco_dict)
 detector   = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
 ELP_INDEX = __ELP_INDEX__
@@ -2164,7 +2164,7 @@ if count>=5:
         params.minMarkerPerimeterRate = 0.05
         detector = cv2.aruco.ArucoDetector(aruco_dict, params)
         PATIENT_ID = 16
-        MARKER_SIZE = 0.19
+        MARKER_SIZE = 0.1865
         K = np.array([[1400,0,960],[0,1400,540],[0,0,1]], dtype=np.float64)
         dist_c = np.zeros((4,1))
 
@@ -2594,7 +2594,7 @@ if count>=5:
                     _params.minMarkerPerimeterRate = 0.05  # Mindestgröße
                     _params.maxMarkerPerimeterRate = 0.5
                     _detector = _cv2.aruco.ArucoDetector(_aruco_dict, _params)
-                    VALID_IDS = {2, 3, 10}  # Nur Stativ-Marker
+                    VALID_IDS = {2, 3, 4, 20, 30, 40}  # Nur Stativ-Marker
                     cap2 = self.setup_caps.get(i)
                     if cap2:
                         _ret, _fr = cap2.read()
