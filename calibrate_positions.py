@@ -358,93 +358,157 @@ def status_text(detections):
     return parts
 
 
-def estimate_pair(samples, label):
-    raw_count = len(samples)
 
-    if raw_count < MIN_PAIR_SAMPLES:
-        print(f"{label}: FEHLER | nur {raw_count} Rohsamples")
+PERMARKER_MIN_SAMPLES = 12
+PERMARKER_CONSISTENT_T_CM = 8.0
+PERMARKER_CONSISTENT_R_DEG = 6.0
+PERMARKER_MAX_STD_CM = 30.0
+TRIANGLE_COMBO_ROT_WEIGHT = 2.0
+TRIANGLE_COMBO_WARN_SCORE = 25.0
+TRIANGLE_COMBO_AMBIGUOUS_DELTA = 5.0
+
+def _svd_average_rotations(R_arr):
+    R_mean = np.mean(R_arr, axis=0)
+    U, _, Vt = np.linalg.svd(R_mean)
+    R_avg = U @ Vt
+    if np.linalg.det(R_avg) < 0:
+        U[:, -1] *= -1
+        R_avg = U @ Vt
+    return R_avg
+
+def _estimate_single_marker(samples, label):
+    if len(samples) < PERMARKER_MIN_SAMPLES:
         return None
-
     R_arr = np.array([s["R"] for s in samples], dtype=np.float64)
     T_arr = np.array([s["T"] for s in samples], dtype=np.float64)
     score_arr = np.array([s["score"] for s in samples], dtype=np.float64)
-
-    markers = [s["marker"] for s in samples]
-
-    if len(score_arr) >= 30:
-        score_limit = np.percentile(score_arr, 70)
-        keep = score_arr <= score_limit
-        R_arr = R_arr[keep]
-        T_arr = T_arr[keep]
-        score_arr = score_arr[keep]
-        markers = [m for m, k in zip(markers, keep) if k]
-
-    if len(T_arr) < MIN_PAIR_SAMPLES:
-        print(f"{label}: FEHLER | nach Scorefilter nur {len(T_arr)} Samples")
-        return None
-
-    T_med = np.median(T_arr, axis=0)
-
     dist = np.linalg.norm(T_arr, axis=1)
     med_dist = np.median(dist)
-    keep = np.abs(dist - med_dist) < max(0.35, med_dist * 0.25)
-
-    R_arr = R_arr[keep]
-    T_arr = T_arr[keep]
-    score_arr = score_arr[keep]
-    markers = [m for m, k in zip(markers, keep) if k]
-
-    if len(T_arr) < MIN_PAIR_SAMPLES:
-        print(f"{label}: FEHLER | nach Distanzfilter nur {len(T_arr)} Samples")
-        return None
-
+    keep = np.abs(dist - med_dist) < max(0.20, med_dist * 0.15)
+    if keep.sum() >= PERMARKER_MIN_SAMPLES:
+        R_arr, T_arr, score_arr = R_arr[keep], T_arr[keep], score_arr[keep]
+    if len(score_arr) >= 20:
+        lim = np.percentile(score_arr, 70)
+        m = score_arr <= lim
+        if m.sum() >= PERMARKER_MIN_SAMPLES:
+            R_arr, T_arr, score_arr = R_arr[m], T_arr[m], score_arr[m]
     T_med = np.median(T_arr, axis=0)
+    R_avg = _svd_average_rotations(R_arr)
+    std_max_cm = float(np.max(T_arr.std(axis=0) * 100.0))
+    reproj_med = float(np.median(score_arr))
+    return {"R": R_avg, "T": T_med.reshape(3), "n": int(len(T_arr)),
+            "std_max_cm": std_max_cm, "reproj_median": reproj_med}
 
-    rvecs = []
+def _rot_diff_deg_local(R_a, R_b):
+    Rd = R_a @ R_b.T
+    tr = np.clip((np.trace(Rd) - 1.0) / 2.0, -1.0, 1.0)
+    return float(np.degrees(np.arccos(tr)))
 
-    for R in R_arr:
-        rv, _ = cv2.Rodrigues(R)
-        rvecs.append(rv.reshape(3))
 
-    rvec_med = np.median(np.array(rvecs), axis=0)
-    R_med, _ = cv2.Rodrigues(rvec_med)
+def _sample_side_label(sm):
+    if "source_side" in sm and "target_side" in sm:
+        return f"{sm['source_side']}->{sm['target_side']}"
+    if "side" in sm:
+        return str(sm["side"])
+    return "unbekannt"
 
-    std_cm = T_arr.std(axis=0) * 100.0
-    std_max_cm = float(np.max(std_cm))
 
-    reproj_median = float(np.median(score_arr))
-    reproj_max = float(np.max(score_arr))
+def _print_side_diagnostics(samples, label):
+    by_marker_side = {}
 
-    marker_counts = {}
+    for sm in samples:
+        mid = int(sm.get("marker", -1))
+        side = _sample_side_label(sm)
+        by_marker_side.setdefault((mid, side), []).append(sm)
 
-    for m in markers:
-        marker_counts[int(m)] = marker_counts.get(int(m), 0) + 1
+    if not by_marker_side:
+        return
 
-    print(
-        f"{label}: OK | "
-        f"T={T_med * 100.0} cm | "
-        f"Distanz={np.linalg.norm(T_med) * 100.0:.1f} cm | "
-        f"Samples={len(T_arr)} | "
-        f"Streuung max={std_max_cm:.1f} cm | "
-        f"Reprojection median={reproj_median:.2f}px | "
-        f"Reprojection max={reproj_max:.2f}px | "
-        f"Marker={marker_counts}"
-    )
+    print("")
+    print(f"Side-Diagnose: {label}")
+    print("-" * (15 + len(label)))
 
-    if std_max_cm > 8.0:
-        print(f"WARNUNG: {label} streut noch relativ stark. Streuung max={std_max_cm:.1f} cm.")
+    for (mid, side), sm_list in sorted(by_marker_side.items(), key=lambda x: (x[0][0], str(x[0][1]))):
+        est = _estimate_single_marker(sm_list, f"{label}/ID{mid}/{side}")
 
-    return {
-        "R": R_med,
-        "T": T_med.reshape(3),
-        "samples": int(len(T_arr)),
-        "raw_samples": int(raw_count),
-        "std_max_cm": std_max_cm,
-        "reproj_median": reproj_median,
-        "reproj_max": reproj_max,
-        "marker_counts": marker_counts,
-    }
+        if est is None:
+            print(f"    ID{mid} {side}: zu wenige brauchbare Samples ({len(sm_list)})")
+            continue
 
+        print(
+            f"    ID{mid} {side}: "
+            f"T={est['T'] * 100.0} cm | "
+            f"n={est['n']} | "
+            f"Streuung max={est['std_max_cm']:.1f} cm | "
+            f"Reproj median={est['reproj_median']:.2f}px"
+        )
+
+    if all(_sample_side_label(sm) == "unbekannt" for sm in samples):
+        print("    WARNUNG: Keine Seiteninformation in Samples gefunden.")
+        print("    Erwartet werden source_side und target_side.")
+
+def estimate_pair(samples, label):
+    raw_count = len(samples)
+    _print_side_diagnostics(samples, label)
+    if raw_count < MIN_PAIR_SAMPLES:
+        print(f"{label}: FEHLER | nur {raw_count} Rohsamples")
+        return None
+    by_marker = {}
+    for sm in samples:
+        by_marker.setdefault(int(sm["marker"]), []).append(sm)
+    per = {}
+    for mid, sm_list in by_marker.items():
+        est = _estimate_single_marker(sm_list, f"{label}/ID{mid}")
+        if est is not None and est["std_max_cm"] <= PERMARKER_MAX_STD_CM:
+            per[mid] = est
+    if not per:
+        print(f"{label}: FEHLER | keine stabile Einzelmarker-Schaetzung")
+        return None
+    for mid, est in sorted(per.items()):
+        print(f"    {label} ID{mid}: T={est['T']*100.0} cm | n={est['n']} | "
+              f"Streuung max={est['std_max_cm']:.1f} cm | Reproj median={est['reproj_median']:.2f}px")
+    mids = sorted(per.keys())
+    if len(mids) == 1:
+        chosen = [mids[0]]
+    else:
+        ref = min(mids, key=lambda k: per[k]["std_max_cm"])
+        cluster = [ref]
+        for mid in mids:
+            if mid == ref:
+                continue
+            t_diff = float(np.linalg.norm(per[mid]["T"] - per[ref]["T"]) * 100.0)
+            r_diff = _rot_diff_deg_local(per[mid]["R"], per[ref]["R"])
+            if t_diff <= PERMARKER_CONSISTENT_T_CM and r_diff <= PERMARKER_CONSISTENT_R_DEG:
+                cluster.append(mid)
+                print(f"    {label}: ID{mid} konsistent mit ID{ref} (dT={t_diff:.1f}cm, dR={r_diff:.1f}deg) -> kombiniere")
+            else:
+                print(f"    {label}: ID{mid} INKONSISTENT mit ID{ref} (dT={t_diff:.1f}cm, dR={r_diff:.1f}deg) -> verworfen")
+        chosen = cluster
+    if len(chosen) == 1:
+        est = per[chosen[0]]
+        R_final, T_final = est["R"], est["T"]
+        std_final = est["std_max_cm"]; reproj_final = est["reproj_median"]; n_final = est["n"]
+        used = f"ID{chosen[0]} (einzeln)"
+    else:
+        weights = np.array([1.0 / max(per[m]["std_max_cm"], 0.5) for m in chosen])
+        weights /= weights.sum()
+        T_final = np.sum([w * per[m]["T"] for w, m in zip(weights, chosen)], axis=0)
+        R_final = _svd_average_rotations(np.array([per[m]["R"] for m in chosen]))
+        std_final = float(np.mean([per[m]["std_max_cm"] for m in chosen]))
+        reproj_final = float(np.mean([per[m]["reproj_median"] for m in chosen]))
+        n_final = int(np.sum([per[m]["n"] for m in chosen]))
+        used = "ID" + "+".join(str(m) for m in chosen) + " (kombiniert)"
+    marker_counts = {int(m): per[m]["n"] for m in chosen}
+    print(f"{label}: OK | T={T_final*100.0} cm | Distanz={np.linalg.norm(T_final)*100.0:.1f} cm | "
+          f"Streuung max={std_final:.1f} cm | Reproj median={reproj_final:.2f}px | Quelle={used}")
+    if std_final > 8.0:
+        print(f"WARNUNG: {label} Eigenstreuung noch hoch ({std_final:.1f} cm).")
+    return {"R": R_final, "T": T_final.reshape(3), "samples": int(n_final),
+            "raw_samples": int(raw_count), "std_max_cm": std_final,
+            "reproj_median": reproj_final, "reproj_max": reproj_final,
+            "marker_counts": marker_counts,
+            "per_marker": per,
+            "selected_markers": [int(m) for m in chosen]}
 
 def rotation_diff_deg(R_a, R_b):
     R_delta = R_a @ R_b.T
@@ -463,6 +527,149 @@ def compose(first, second):
     T = R1 @ T2 + T1
 
     return {"R": R, "T": T}
+
+
+
+def _single_marker_estimate(pair_est, marker_id):
+    marker_id = int(marker_id)
+    pm = pair_est.get("per_marker", {})
+    if marker_id not in pm:
+        return None
+
+    src = pm[marker_id]
+
+    return {
+        "R": np.array(src["R"], dtype=np.float64),
+        "T": np.array(src["T"], dtype=np.float64).reshape(3),
+        "samples": int(src.get("n", 0)),
+        "raw_samples": int(pair_est.get("raw_samples", src.get("n", 0))),
+        "std_max_cm": float(src.get("std_max_cm", 999.0)),
+        "reproj_median": float(src.get("reproj_median", 999.0)),
+        "reproj_max": float(src.get("reproj_median", 999.0)),
+        "marker_counts": {marker_id: int(src.get("n", 0))},
+        "per_marker": pm,
+        "selected_markers": [marker_id],
+    }
+
+
+def apply_triangle_combo_selection(estimates):
+    required = ["ELP1_to_ELP2", "OV9281_to_ELP2", "OV9281_to_ELP1"]
+
+    if any(estimates.get(name) is None for name in required):
+        print("")
+        print("Triangle-Combo-Auswahl: nicht moeglich, mindestens eine Beziehung fehlt.")
+        return estimates
+
+    per_lists = {}
+
+    for name in required:
+        pm = estimates[name].get("per_marker", {})
+        mids = sorted(int(m) for m in pm.keys())
+
+        if not mids:
+            print("")
+            print(f"Triangle-Combo-Auswahl: {name} hat keine Einzelmarker-Schaetzungen.")
+            return estimates
+
+        per_lists[name] = mids
+
+    rows = []
+
+    for m12 in per_lists["ELP1_to_ELP2"]:
+        e12 = _single_marker_estimate(estimates["ELP1_to_ELP2"], m12)
+        if e12 is None:
+            continue
+
+        for m02 in per_lists["OV9281_to_ELP2"]:
+            e02 = _single_marker_estimate(estimates["OV9281_to_ELP2"], m02)
+            if e02 is None:
+                continue
+
+            for m01 in per_lists["OV9281_to_ELP1"]:
+                e01 = _single_marker_estimate(estimates["OV9281_to_ELP1"], m01)
+                if e01 is None:
+                    continue
+
+                via = compose(e12, e01)
+                direct = e02
+
+                t_diff = float(np.linalg.norm(direct["T"].reshape(3) - via["T"].reshape(3)) * 100.0)
+                r_diff = rotation_diff_deg(direct["R"], via["R"])
+                score = float(t_diff + TRIANGLE_COMBO_ROT_WEIGHT * r_diff)
+
+                rows.append(
+                    {
+                        "score": score,
+                        "t_diff": t_diff,
+                        "r_diff": r_diff,
+                        "m12": int(m12),
+                        "m02": int(m02),
+                        "m01": int(m01),
+                        "e12": e12,
+                        "e02": e02,
+                        "e01": e01,
+                    }
+                )
+
+    if not rows:
+        print("")
+        print("Triangle-Combo-Auswahl: keine Kombinationen berechenbar.")
+        return estimates
+
+    rows.sort(key=lambda x: x["score"])
+
+    print("")
+    print("Triangle-Combo-Auswahl")
+    print("======================")
+    print(f"Score = Translation_cm + {TRIANGLE_COMBO_ROT_WEIGHT:.1f} * Rotation_deg")
+
+    for idx, row in enumerate(rows, start=1):
+        marker_text = (
+            f"ELP1_to_ELP2=ID{row['m12']} | "
+            f"OV9281_to_ELP2=ID{row['m02']} | "
+            f"OV9281_to_ELP1=ID{row['m01']}"
+        )
+
+        prefix = "BESTE" if idx == 1 else f"{idx}."
+
+        print(
+            f"  {prefix}: {marker_text} | "
+            f"dT={row['t_diff']:.1f} cm | "
+            f"dR={row['r_diff']:.2f} deg | "
+            f"Score={row['score']:.2f}"
+        )
+
+    best = rows[0]
+
+    if best["score"] > TRIANGLE_COMBO_WARN_SCORE:
+        print(
+            f"WARNUNG: Bester Triangle-Combo-Score ist {best['score']:.2f} "
+            f"> {TRIANGLE_COMBO_WARN_SCORE:.2f}. "
+            "Dreieck schliesst auch optimal nicht. Ursache liegt tiefer."
+        )
+
+    if len(rows) >= 2:
+        delta = rows[1]["score"] - rows[0]["score"]
+
+        if delta < TRIANGLE_COMBO_AMBIGUOUS_DELTA:
+            print(
+                f"WARNUNG: Triangle-Combo-Wahl nicht eindeutig. "
+                f"Score-Abstand beste zwei Kombinationen: {delta:.2f} "
+                f"< {TRIANGLE_COMBO_AMBIGUOUS_DELTA:.2f}."
+            )
+
+    estimates["ELP1_to_ELP2"] = best["e12"]
+    estimates["OV9281_to_ELP2"] = best["e02"]
+    estimates["OV9281_to_ELP1"] = best["e01"]
+
+    print(
+        "Triangle-Combo gewaehlt: "
+        f"ELP1_to_ELP2=ID{best['m12']}, "
+        f"OV9281_to_ELP2=ID{best['m02']}, "
+        f"OV9281_to_ELP1=ID{best['m01']}"
+    )
+
+    return estimates
 
 
 def save_legacy(pair_name, estimate):
@@ -536,10 +743,10 @@ def main():
     params.minMarkerPerimeterRate = 0.05
     params.maxMarkerPerimeterRate = 0.80
 
-    try:
+    if hasattr(cv2.aruco, "CORNER_REFINE_APRILTAG"):
+        params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_APRILTAG
+    elif hasattr(cv2.aruco, "CORNER_REFINE_SUBPIX"):
         params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
-    except Exception:
-        pass
 
     detector = cv2.aruco.ArucoDetector(aruco_dict, params)
 
@@ -667,6 +874,8 @@ def main():
 
     for pair_name, rule in PAIR_RULES.items():
         estimates[pair_name] = estimate_pair(pair_samples[pair_name], rule["description"])
+
+    estimates = apply_triangle_combo_selection(estimates)
 
     print("")
     if estimates["ELP1_to_ELP2"] is not None:

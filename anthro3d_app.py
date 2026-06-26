@@ -1531,6 +1531,7 @@ class MainWindow(QMainWindow):
 
         stereo_title = QLabel("Stereo-Kamera ausrichten")
         stereo_title = QLabel("Stereo-Kalibrierung")
+        stereo_title = QLabel("Stereo-Kalibrierung")
         stereo_title.setStyleSheet(f"font-size:16px;font-weight:700;color:{COLORS['g1']};margin-top:8px;")
         lay.addWidget(stereo_title)
 
