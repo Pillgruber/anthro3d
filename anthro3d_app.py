@@ -1129,6 +1129,29 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._start_camera()
 
+    def _run_anthro3d_tool(self, script_name):
+        base = Path("~/anthro3d").expanduser()
+        script = base / script_name
+        if not script.exists():
+            QMessageBox.warning(self, "ANTHRO3D", "Skript nicht gefunden:" + chr(10) + str(script))
+            return
+        run_dir = base / "aruco_state"
+        run_dir.mkdir(exist_ok=True)
+        run_file = run_dir / ("run_" + script.stem + ".command")
+        q_base = __import__("shlex").quote(str(base))
+        q_script = __import__("shlex").quote(str(script))
+        nl = chr(10)
+        content = nl.join(["#!/bin/zsh", "cd " + q_base, "python3 " + q_script, "echo ''", "echo 'Fertig. Fenster kann geschlossen werden.'", "echo 'Taste druecken...'", "read"]) + nl
+        run_file.write_text(content)
+        run_file.chmod(0o755)
+        try:
+            __import__("subprocess").Popen(["open", "-a", "Terminal", str(run_file)])
+        except Exception as e:
+            QMessageBox.warning(self, "ANTHRO3D", "Start fehlgeschlagen:" + chr(10) + str(e))
+
+    def _measure_marker_offsets(self):
+        self._run_anthro3d_tool("measure_marker_offsets.py")
+
     def _build_ui(self):
         # Globales Style
         self.setStyleSheet(f"""
@@ -1491,6 +1514,11 @@ class MainWindow(QMainWindow):
         lay.addWidget(auto_desc)
 
         auto_btn_row = QHBoxLayout()
+        self.marker_offset_btn = QPushButton("📏 Marker-Abstände messen")
+        self.marker_offset_btn.setStyleSheet("""QPushButton{background:#e8f3ea;color:#3d6b50;border:1px solid #c2dbc8;border-radius:8px;font-size:11px;font-weight:600;padding:10px 22px;text-align:left;} QPushButton:hover{background:#c2dbc8;}""")
+        self.marker_offset_btn.clicked.connect(self._measure_marker_offsets)
+        auto_btn_row.addWidget(self.marker_offset_btn)
+
         self.auto_calib_btn = QPushButton("▶  Positions-Kalibrierung starten")
         self.auto_calib_btn.setStyleSheet(f"""QPushButton{{background:{COLORS['g1']};color:white;
             border:none;border-radius:10px;font-size:13px;font-weight:600;padding:12px 32px;}}
@@ -1782,7 +1810,7 @@ while True:
 cv2.destroyAllWindows()
 cap_l.release(); cap_r.release()
 """
-        proc = subprocess.Popen([sys.executable, '-c', script])
+        proc = __import__('subprocess').Popen([sys.executable, '-c', script])
 
         def check_done():
             if proc.poll() is not None:
