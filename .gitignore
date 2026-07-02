@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 
 aruco_state/run_*.command
+calib_ov9281_charuco_clean/
