@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+
+aruco_state/run_*.command
