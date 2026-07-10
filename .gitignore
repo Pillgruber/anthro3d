@@ -4,3 +4,6 @@ __pycache__/
 aruco_state/run_*.command
 calib_ov9281_charuco_clean/
 calib_elp2_charuco_clean/
+
+.venv312/
+output/
