@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 
 BASE = Path.home() / "anthro3d"
+COUNTDOWN_SECONDS = 5
 
 def load_yaml(path):
     p = Path(path)
@@ -25,6 +26,14 @@ def print_roles():
     print("=============================")
     for cam in cfg.get("cameras", {}).get("tracking", []):
         print(f"{cam.get('name')}: Index {cam.get('device_index')} | enabled={cam.get('enabled')}")
+    print("")
+
+def countdown():
+    print(f"Start in {COUNTDOWN_SECONDS} Sekunden. Jetzt zwischen die Kameras stellen.")
+    for i in range(COUNTDOWN_SECONDS, 0, -1):
+        print(f"{i}...")
+        time.sleep(1.0)
+    print("Aufnahme startet jetzt.")
     print("")
 
 def open_cap(idx, w, h):
@@ -168,6 +177,7 @@ def main():
         print(f"ELP2 lokale Skalenkorrektur geladen: {scale:.4f}")
         print("Hinweis: Nur in der Statistik skaliert, nicht in Dateien gespeichert.")
         print("")
+    countdown()
     process_dual("OV9281", "OV9281 L", "OV9281 R", "stereo_config_ov9281.yaml", 1280, 800)
     process_sbs("ELP2", "ELP2", "stereo_config.yaml", 2560, 720, local_scale=scale)
     process_sbs("ELP1", "ELP1", "stereo_config_elp1.yaml", 2560, 720)
