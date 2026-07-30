@@ -4,6 +4,336 @@ from PyQt6.QtWidgets import QApplication, QWidget
 from PyQt6.QtGui import QPainter, QColor
 import math
 
+
+# AUTO_SCAN_WINDOW_SCREENSHOT
+# Speichert Scanfenster und fertige Punktwolke unter demselben Zeitstempel.
+_SCAN_WINDOW_LAST_FRAME = None
+_SCAN_WINDOW_ORIGINAL_IMSHOW = cv2.imshow
+_CURRENT_SCAN_STEM = None
+
+
+def _scan_output_dir():
+    output_dir = Path.home() / "Desktop" / "scanfenster screenshot"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def _new_scan_stem():
+    from datetime import datetime
+    return "scan_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def _tracked_scan_imshow(window_name, frame):
+    global _SCAN_WINDOW_LAST_FRAME
+
+    try:
+        title = str(window_name)
+
+        if (
+            frame is not None
+            and "ELP2" in title
+            and "ELP1" in title
+        ):
+            _SCAN_WINDOW_LAST_FRAME = frame.copy()
+
+    except Exception as exc:
+        print(f"Scanfenster konnte nicht übernommen werden: {exc}")
+
+    return _SCAN_WINDOW_ORIGINAL_IMSHOW(window_name, frame)
+
+
+cv2.imshow = _tracked_scan_imshow
+
+
+def _save_scan_window_screenshot():
+    global _CURRENT_SCAN_STEM
+
+    _CURRENT_SCAN_STEM = _new_scan_stem()
+    output_dir = _scan_output_dir()
+    screenshot_path = output_dir / f"{_CURRENT_SCAN_STEM}_scanfenster.png"
+
+    if _SCAN_WINDOW_LAST_FRAME is None:
+        print("Screenshot nicht gespeichert: Kein Scanfenster-Frame vorhanden.")
+        return
+
+    success = cv2.imwrite(
+        str(screenshot_path),
+        _SCAN_WINDOW_LAST_FRAME
+    )
+
+    if success:
+        print(f"Screenshot gespeichert: {screenshot_path}")
+    else:
+        print(f"Screenshot konnte nicht gespeichert werden: {screenshot_path}")
+
+
+
+# SIX_CAMERA_SNAPSHOT
+def _camera_panel(frame, label, panel_width=480, panel_height=300):
+    """
+    Fügt ein Kamerabild ohne Zuschneiden und ohne Verzerrung
+    in eine 480-x-300-Fläche ein.
+    """
+    canvas = np.zeros(
+        (panel_height, panel_width, 3),
+        dtype=np.uint8
+    )
+
+    if frame is None:
+        cv2.putText(
+            canvas,
+            f"{label} - kein Bild",
+            (18, 42),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.75,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA
+        )
+        return canvas
+
+    image = np.asarray(frame)
+
+    if image.ndim == 2:
+        image = cv2.cvtColor(
+            image,
+            cv2.COLOR_GRAY2BGR
+        )
+    elif image.ndim == 3 and image.shape[2] == 4:
+        image = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGRA2BGR
+        )
+
+    source_height, source_width = image.shape[:2]
+
+    if source_width <= 0 or source_height <= 0:
+        return canvas
+
+    scale = min(
+        panel_width / source_width,
+        panel_height / source_height
+    )
+
+    target_width = max(
+        1,
+        int(round(source_width * scale))
+    )
+
+    target_height = max(
+        1,
+        int(round(source_height * scale))
+    )
+
+    interpolation = (
+        cv2.INTER_AREA
+        if scale < 1.0
+        else cv2.INTER_LINEAR
+    )
+
+    resized = cv2.resize(
+        image,
+        (target_width, target_height),
+        interpolation=interpolation
+    )
+
+    x_offset = (panel_width - target_width) // 2
+    y_offset = (panel_height - target_height) // 2
+
+    canvas[
+        y_offset:y_offset + target_height,
+        x_offset:x_offset + target_width
+    ] = resized
+
+    cv2.rectangle(
+        canvas,
+        (0, 0),
+        (panel_width - 1, 42),
+        (0, 0, 0),
+        thickness=-1
+    )
+
+    cv2.putText(
+        canvas,
+        f"{label}  {source_width}x{source_height}",
+        (14, 29),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.70,
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA
+    )
+
+    return canvas
+
+
+def _save_six_camera_snapshot(
+    elp2_left,
+    elp2_right,
+    elp1_left,
+    elp1_right,
+    ov_left,
+    ov_right
+):
+    """
+    Speichert alle sechs Rohbilder:
+
+    ELP2 links    | ELP2 rechts
+    ELP1 links    | ELP1 rechts
+    OV9281 links  | OV9281 rechts
+    """
+    global _CURRENT_SCAN_STEM
+    global _SCAN_WINDOW_LAST_FRAME
+
+    try:
+        if _CURRENT_SCAN_STEM is None:
+            _CURRENT_SCAN_STEM = _new_scan_stem()
+
+        row_elp2 = np.hstack([
+            _camera_panel(elp2_left, "ELP2 links"),
+            _camera_panel(elp2_right, "ELP2 rechts"),
+        ])
+
+        row_elp1 = np.hstack([
+            _camera_panel(elp1_left, "ELP1 links"),
+            _camera_panel(elp1_right, "ELP1 rechts"),
+        ])
+
+        row_ov = np.hstack([
+            _camera_panel(ov_left, "OV9281 links"),
+            _camera_panel(ov_right, "OV9281 rechts"),
+        ])
+
+        snapshot = np.vstack([
+            row_elp2,
+            row_elp1,
+            row_ov
+        ])
+
+        _SCAN_WINDOW_LAST_FRAME = snapshot.copy()
+
+        output_dir = _scan_output_dir()
+        screenshot_path = (
+            output_dir
+            / f"{_CURRENT_SCAN_STEM}_scanfenster.png"
+        )
+
+        success = cv2.imwrite(
+            str(screenshot_path),
+            snapshot
+        )
+
+        cv2.imshow(
+            "ELP2 | ELP1 | OV9281",
+            snapshot
+        )
+        cv2.waitKey(150)
+
+        if success:
+            print(
+                "Screenshot mit allen sechs Kameras gespeichert: "
+                f"{screenshot_path}"
+            )
+        else:
+            print(
+                "Screenshot konnte nicht gespeichert werden: "
+                f"{screenshot_path}"
+            )
+
+    except Exception as exc:
+        print(
+            f"Fehler beim Sechs-Kamera-Screenshot: {exc}"
+        )
+
+
+
+def _save_scan_files(points, colors, suffix=""):
+    global _CURRENT_SCAN_STEM
+
+    try:
+        if points is None or len(points) == 0:
+            print("Scan nicht gespeichert: Keine Punkte vorhanden.")
+            return
+
+        if _CURRENT_SCAN_STEM is None:
+            _CURRENT_SCAN_STEM = _new_scan_stem()
+
+        output_dir = _scan_output_dir()
+        npz_path = output_dir / f"{_CURRENT_SCAN_STEM}{suffix}.npz"
+        ply_path = output_dir / f"{_CURRENT_SCAN_STEM}{suffix}.ply"
+
+        scan_points = np.asarray(points, dtype=np.float32)
+        valid = np.isfinite(scan_points).all(axis=1)
+        scan_points = scan_points[valid]
+
+        valid_colors = (
+            colors is not None
+            and np.asarray(colors).ndim == 2
+            and len(colors) == len(points)
+            and np.asarray(colors).shape[1] >= 3
+        )
+
+        if valid_colors:
+            scan_colors = np.asarray(colors)[valid, :3]
+        else:
+            scan_colors = np.full(
+                (len(scan_points), 3),
+                255,
+                dtype=np.uint8
+            )
+
+        scan_colors = np.nan_to_num(
+            scan_colors,
+            nan=0.0,
+            posinf=255.0,
+            neginf=0.0
+        )
+
+        if scan_colors.size and float(scan_colors.max()) <= 1.5:
+            scan_colors = scan_colors * 255.0
+
+        scan_colors = np.clip(
+            scan_colors,
+            0,
+            255
+        ).astype(np.uint8)
+
+        np.savez_compressed(
+            npz_path,
+            points=scan_points,
+            colors=scan_colors
+        )
+
+        with ply_path.open("w", encoding="ascii", newline="\n") as ply:
+            ply.write("ply\n")
+            ply.write("format ascii 1.0\n")
+            ply.write(f"element vertex {len(scan_points)}\n")
+            ply.write("property float x\n")
+            ply.write("property float y\n")
+            ply.write("property float z\n")
+            ply.write("property uchar red\n")
+            ply.write("property uchar green\n")
+            ply.write("property uchar blue\n")
+            ply.write("end_header\n")
+
+            for point, color in zip(scan_points, scan_colors):
+                ply.write(
+                    f"{point[0]:.6f} "
+                    f"{point[1]:.6f} "
+                    f"{point[2]:.6f} "
+                    f"{int(color[0])} "
+                    f"{int(color[1])} "
+                    f"{int(color[2])}\n"
+                )
+
+        print(f"Scan NPZ gespeichert: {npz_path}")
+        print(f"Scan PLY gespeichert: {ply_path}")
+        print(f"Gespeicherte Scanpunkte: {len(scan_points)}")
+
+    except Exception as exc:
+        print(f"Fehler beim Speichern des Scans: {exc}")
+
+
 # MediaPipe-Personensegmentierung für sichtbare Körperteile
 try:
     import mediapipe as _mp
@@ -95,19 +425,32 @@ def make_person_mask(frame_bgr, seg, target_shape, name="cam", min_pixels=800):
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
         mask = cv2.dilate(mask, kernel, iterations=1)
 
-        # Nur größte zusammenhängende Komponente behalten.
-        num, labels, stats, _ = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8), connectivity=8)
+        # A/B-Test: Alle zusammenhängenden Komponenten behalten.
+        # Zuvor wurde nur die größte Komponente übernommen.
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(
+            (mask > 0).astype(np.uint8),
+            connectivity=8
+        )
 
         if num > 1:
             areas = stats[1:, cv2.CC_STAT_AREA]
-            best = 1 + int(np.argmax(areas))
-            best_area = int(stats[best, cv2.CC_STAT_AREA])
+            best_area = int(areas.max())
+            area_list = sorted(
+                (int(area) for area in areas),
+                reverse=True
+            )
 
-            clean = np.zeros_like(mask)
-            clean[labels == best] = 255
-            mask = clean
+            print(
+                f"Personenmaske {name}: Komponenten={num - 1} | "
+                f"größte Flächen={area_list[:6]} | "
+                f"A/B-Test: alle behalten"
+            )
         else:
             best_area = int((mask > 0).sum())
+            print(
+                f"Personenmaske {name}: eine Komponente | "
+                f"A/B-Test: unverändert"
+            )
 
         n = int((mask > 0).sum())
         ratio = n / total * 100 if total else 0
@@ -141,7 +484,8 @@ def make_maps_split(cfg, size=(1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha
     mr1,mr2=cv2.initUndistortRectifyMap(K_r,d_r,R2,P2,size,cv2.CV_32F)
     return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0]),R1
 
-ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2,R1_2 = make_maps_split(cfg2, (1600,1200))
+ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2,R1_2 = make_maps_split(cfg2, (1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
+print(f"ELP2 Rectify TEST alpha=-1: fx={fx2:.1f} cx={cx2:.1f} cy={cy2:.1f} baseline={bl2*100:.1f}cm")
 ml1_1,ml1_2,mr1_1,mr1_2,fx1,cx1,cy1,bl1,R1_1 = make_maps_split(cfg1, (1600,1200))
 mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov,R1_ov = make_maps_split(cfgov, (1280,800), flags=0, alpha=-1)
 print(f"OV9281 Rectify aktiv: fx={fxov:.1f} cx={cxov:.1f} cy={cyov:.1f} baseline={blov*100:.1f}cm flags=0")
@@ -245,32 +589,128 @@ capovL.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovL.set(cv2.CAP_PROP_FRAME_HEIGHT,
 capovR = cv2.VideoCapture(2)
 capovR.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovR.set(cv2.CAP_PROP_FRAME_HEIGHT,800)
 
-def get_disp_split(cap, ml1, ml2, mr1, mr2, lm_, rm_, wls_, alpha=2.5, beta=30):
-    """ELP: ein Frame mit L+R nebeneinander"""
-    ret,frame = cap.read()
-    if not ret: return None,None
-    w = frame.shape[1]//2
-    fl = cv2.remap(frame[:,:w], ml1, ml2, cv2.INTER_LINEAR)
-    fr = cv2.remap(frame[:,w:], mr1, mr2, cv2.INTER_LINEAR)
+def get_disp_split(
+    cap,
+    ml1, ml2,
+    mr1, mr2,
+    lm_, rm_, wls_,
+    alpha=2.5,
+    beta=30,
+    return_views=False
+):
+    """
+    ELP: ein gemeinsamer Frame mit linkem und rechtem Kamerabild.
+
+    Normal:
+        return d, fl
+
+    Für den Screenshot:
+        return d, fl, fr, raw_l, raw_r
+    """
+    ret, frame = cap.read()
+
+    if not ret:
+        if return_views:
+            return None, None, None, None, None
+        return None, None
+
+    width = frame.shape[1] // 2
+
+    raw_l = frame[:, :width].copy()
+    raw_r = frame[:, width:].copy()
+
+    fl = cv2.remap(
+        raw_l,
+        ml1,
+        ml2,
+        cv2.INTER_LINEAR
+    )
+
+    fr = cv2.remap(
+        raw_r,
+        mr1,
+        mr2,
+        cv2.INTER_LINEAR
+    )
+
     gl = cv2.cvtColor(fl, cv2.COLOR_BGR2GRAY)
     gr = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
-    dl = lm_.compute(gl,gr); dr = rm_.compute(gr,gl)
-    d  = wls_.filter(dl,fl,disparity_map_right=dr).astype(np.float32)/16.0
-    d[d<4] = 0
+
+    dl = lm_.compute(gl, gr)
+    dr = rm_.compute(gr, gl)
+
+    d = wls_.filter(
+        dl,
+        fl,
+        disparity_map_right=dr
+    ).astype(np.float32) / 16.0
+
+    d[d < 4] = 0
+
+    if return_views:
+        return d, fl, fr, raw_l, raw_r
+
     return d, fl
 
-def get_disp_dual(capL, capR, ml1, ml2, mr1, mr2, lm_, rm_, wls_):
-    """OV9281: zwei separate Kamera-Feeds"""
-    retL,fL = capL.read()
-    retR,fR = capR.read()
-    if not retL or not retR: return None,None
-    fl = cv2.remap(fL, ml1, ml2, cv2.INTER_LINEAR)
-    fr = cv2.remap(fR, mr1, mr2, cv2.INTER_LINEAR)
+def get_disp_dual(
+    capL,
+    capR,
+    ml1, ml2,
+    mr1, mr2,
+    lm_, rm_, wls_,
+    return_views=False
+):
+    """
+    OV9281: zwei separate Kameras.
+
+    Normal:
+        return d, fl
+
+    Für den Screenshot:
+        return d, fl, fr, raw_l, raw_r
+    """
+    retL, raw_l = capL.read()
+    retR, raw_r = capR.read()
+
+    if not retL or not retR:
+        if return_views:
+            return None, None, None, None, None
+        return None, None
+
+    raw_l = raw_l.copy()
+    raw_r = raw_r.copy()
+
+    fl = cv2.remap(
+        raw_l,
+        ml1,
+        ml2,
+        cv2.INTER_LINEAR
+    )
+
+    fr = cv2.remap(
+        raw_r,
+        mr1,
+        mr2,
+        cv2.INTER_LINEAR
+    )
+
     gl = cv2.cvtColor(fl, cv2.COLOR_BGR2GRAY)
     gr = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
-    dl = lm_.compute(gl,gr); dr = rm_.compute(gr,gl)
-    d  = wls_.filter(dl,fl,disparity_map_right=dr).astype(np.float32)/16.0
-    d[d<4] = 0
+
+    dl = lm_.compute(gl, gr)
+    dr = rm_.compute(gr, gl)
+
+    d = wls_.filter(
+        dl,
+        fl,
+        disparity_map_right=dr
+    ).astype(np.float32) / 16.0
+
+    d[d < 4] = 0
+
+    if return_views:
+        return d, fl, fr, raw_l, raw_r
+
     return d, fl
 
 def get_mask(disp, bg, stable, cx_img, cy_img):
@@ -433,12 +873,49 @@ while True:
             cv2.waitKey(1)
             _time.sleep(1)
         # Frische Frames für den Scan holen
-        d2,fl2 = get_disp_split(cap2, ml2_1,ml2_2,mr2_1,mr2_2, lm_elp,rm_elp,wls_elp)
-        d1,fl1 = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
+        d2, fl2, fr2, raw2_left, raw2_right = get_disp_split(
+            cap2,
+            ml2_1, ml2_2, mr2_1, mr2_2,
+            lm_elp, rm_elp, wls_elp,
+            return_views=True
+        )
+
+        d1, fl1, fr1, raw1_left, raw1_right = get_disp_split(
+            cap1,
+            ml1_1, ml1_2, mr1_1, mr1_2,
+            lm_elp, rm_elp, wls_elp,
+            return_views=True
+        )
+
+        rawov_left = None
+        rawov_right = None
+        frov = None
+
         if OV_OK:
-            dov,flov = get_disp_dual(capovL,capovR, mlov1,mlov2,mrov1,mrov2, lm_ov,rm_ov,wls_ov)
+            dov, flov, frov, rawov_left, rawov_right = get_disp_dual(
+                capovL, capovR,
+                mlov1, mlov2, mrov1, mrov2,
+                lm_ov, rm_ov, wls_ov,
+                return_views=True
+            )
+        else:
+            dov, flov, frov = None, None, None
+
+        if d2 is None or d1 is None:
+            print("Scan abgebrochen: ELP2- oder ELP1-Frame fehlt.")
+            continue
+
+        _save_six_camera_snapshot(
+            raw2_left,
+            raw2_right,
+            raw1_left,
+            raw1_right,
+            rawov_left,
+            rawov_right
+        )
+
         # 2D-Personenmasken:
-        # Nur sichtbare Körperbereiche aus dem Kamerabild werden zu 3D-Punkten.
+        # Nur sichtbare Körperbereiche werden trianguliert.
         m2 = make_person_mask(fl2, seg2, d2.shape, name="ELP2", min_pixels=800)
         m1 = make_person_mask(fl1, seg1, d1.shape, name="ELP1", min_pixels=800)
 
@@ -460,18 +937,80 @@ while True:
             zmask2 = (p2[:,2] > 0.5) & (p2[:,2] < 4.0)
             xmask2 = (p2[:,0] > -1.5) & (p2[:,0] < 1.5)
             p2 = p2[zmask2 & xmask2]; c2 = c2[zmask2 & xmask2]
+            # SEPARATE_CAMERA_CLOUD_EXPORT
+            _save_scan_files(
+                p2,
+                c2,
+                suffix="_ELP2"
+            )
             parts.append(p2); cparts.append(c2)
             print(f"ELP2: {len(p2)}")
         if p1 is not None:
-            p1_fix = p1.copy()
-            p1_fix[:,0] *= -1
-            p1_t = (R_rel_elp1 @ p1_fix.T).T + T_rel_elp1.flatten()
+            # ELP1→ELP2 A/B-Test: Kandidat D
+            # R transponiert, kein X-Flip, Translation unverändert.
+            p1_t = (
+                R_rel_elp1.T @ p1.T
+            ).T + np.asarray(T_rel_elp1).reshape(1, 3)
+
+            print("ELP1 Transformation aktiv: Kandidat D = R.T + kein Flip + T")
+            # ELP1_TRANSFORM_DIAGNOSIS
+            # Rein diagnostisch: p1_t bleibt die tatsächlich verwendete Variante.
+            _T1 = np.asarray(T_rel_elp1, dtype=float).reshape(1, 3)
+            _p1_flipx = p1.copy()
+            _p1_flipx[:, 0] *= -1.0
+
+            _elp1_candidates = {
+                "A aktuell": p1_t,
+                "B R + kein Flip + T":
+                    (R_rel_elp1 @ p1.T).T + _T1,
+                "C R.T + flipX + T":
+                    (R_rel_elp1.T @ _p1_flipx.T).T + _T1,
+                "D R.T + kein Flip + T":
+                    (R_rel_elp1.T @ p1.T).T + _T1,
+                "E invers R.T*(p-T)":
+                    (R_rel_elp1.T @ (p1 - _T1).T).T,
+                "F invers R.T*(flipX(p)-T)":
+                    (R_rel_elp1.T @ (_p1_flipx - _T1).T).T,
+            }
+
+            if p2 is not None and len(p2) > 0:
+                _p2_median = np.median(p2, axis=0)
+                print(
+                    "ELP2 Zielzentrum: "
+                    f"X={_p2_median[0]*100:.1f}cm "
+                    f"Y={_p2_median[1]*100:.1f}cm "
+                    f"Z={_p2_median[2]*100:.1f}cm | "
+                    f"X={p2[:,0].min()*100:.0f} bis "
+                    f"{p2[:,0].max()*100:.0f}cm | "
+                    f"Z={p2[:,2].min()*100:.0f} bis "
+                    f"{p2[:,2].max()*100:.0f}cm"
+                )
+
+            print("ELP1 Transform-Hypothesen:")
+            for _name, _points in _elp1_candidates.items():
+                _median = np.median(_points, axis=0)
+                print(
+                    f"  {_name}: "
+                    f"Mitte X={_median[0]*100:.1f}cm "
+                    f"Y={_median[1]*100:.1f}cm "
+                    f"Z={_median[2]*100:.1f}cm | "
+                    f"X={_points[:,0].min()*100:.0f} bis "
+                    f"{_points[:,0].max()*100:.0f}cm | "
+                    f"Z={_points[:,2].min()*100:.0f} bis "
+                    f"{_points[:,2].max()*100:.0f}cm"
+                )
+
             # Z-Clipping: nur Punkte 0.5–4m vor ELP2 Ursprung
             zmask1 = (p1_t[:,2] > 0.5) & (p1_t[:,2] < 4.0)
             xmask1 = (p1_t[:,0] > -1.5) & (p1_t[:,0] < 1.5)
             mask1 = zmask1 & xmask1
             print(f"ELP1 transformiert: X={p1_t[:,0].min()*100:.0f}-{p1_t[:,0].max()*100:.0f} Y={p1_t[:,1].min()*100:.0f}-{p1_t[:,1].max()*100:.0f} Z={p1_t[:,2].min()*100:.0f}-{p1_t[:,2].max()*100:.0f}")
             p1_t = p1_t[mask1]; c1 = c1[mask1]
+            _save_scan_files(
+                p1_t,
+                c1,
+                suffix="_ELP1_transformiert"
+            )
             parts.append(p1_t); cparts.append(c1)
             print(f"ELP1: {len(p1)} → {len(p1_t)} nach Clipping")
         if OV_OK and mov is not None and stov is not None:
@@ -662,6 +1201,7 @@ if all_pts is not None:
     print(f"  Nach Filter: {len(pts)} Punkte ({keep.sum()*100//len(keep)}% behalten)")
 
     print(f"DEBUG vor Viewer: {len(pts)} Punkte, pts shape={pts.shape}")
+    _save_scan_files(pts, cols, suffix="_fusioniert")
     pts[:,0]-=pts[:,0].mean(); pts[:,1]-=pts[:,1].mean(); pts[:,2]-=pts[:,2].mean()
     pts[:,1]=-pts[:,1]
     step=max(1,len(pts)//10000); pts=pts[::step]; cols=cols[::step]
