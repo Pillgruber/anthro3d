@@ -20,10 +20,10 @@ MIN_SAMPLES_PER_PAIR = 20
 TIME_LIMIT_SEC = 35.0
 
 DEVICES = [
-    {"name": "ELP2", "index": 0, "width": 2560, "height": 720, "split": True, "config": "stereo_config.yaml", "calib_view_width": 1280, "calib_view_height": 720},
-    {"name": "ELP1", "index": 3, "width": 3200, "height": 1200, "split": True, "config": "stereo_config_elp1.yaml", "calib_view_width": 1600, "calib_view_height": 1200},
-    {"name": "OV9281_L", "index": 1, "width": 1280, "height": 800, "split": False, "side": "l", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
-    {"name": "OV9281_R", "index": 2, "width": 1280, "height": 800, "split": False, "side": "r", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
+    {"name": "ELP2", "index": None, "width": 2560, "height": 720, "split": True, "config": "stereo_config.yaml", "calib_view_width": 1280, "calib_view_height": 720},
+    {"name": "ELP1", "index": None, "width": 3200, "height": 1200, "split": True, "config": "stereo_config_elp1.yaml", "calib_view_width": 1600, "calib_view_height": 1200},
+    {"name": "OV9281_L", "index": None, "width": 1280, "height": 800, "split": False, "side": "l", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
+    {"name": "OV9281_R", "index": None, "width": 1280, "height": 800, "split": False, "side": "r", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
 ]
 
 def load_yaml(path):
@@ -32,6 +32,232 @@ def load_yaml(path):
         return None
     with open(p, "r") as f:
         return yaml.safe_load(f)
+
+
+# DYNAMIC_CAMERA_INDICES_FROM_CONFIG
+CAMERA_INDEX_CONFIG = "config.yaml"
+
+
+def normalize_camera_name(name):
+    """
+    Vereinheitlicht beispielsweise:
+    'OV9281 L', 'OV9281_L' und 'ov9281-l'
+    zu demselben Schlüssel.
+    """
+    return "".join(
+        character
+        for character in str(name).casefold()
+        if character.isalnum()
+    )
+
+
+
+# ROBUST_CAMERA_LIST_EXTRACTION
+def is_camera_entry_list(value):
+    """
+    Erkennt eine Liste mit Kameraeinträgen anhand der Felder
+    name und device_index.
+    """
+    if not isinstance(value, list) or not value:
+        return False
+
+    valid_entries = [
+        item
+        for item in value
+        if isinstance(item, dict)
+        and "name" in item
+        and "device_index" in item
+    ]
+
+    return len(valid_entries) > 0
+
+
+def find_camera_lists(value, path="root"):
+    """
+    Sucht rekursiv nach Listen, die Kameraeinträge enthalten.
+    """
+    matches = []
+
+    if is_camera_entry_list(value):
+        matches.append((path, value))
+
+    if isinstance(value, dict):
+        for key, child in value.items():
+            matches.extend(
+                find_camera_lists(
+                    child,
+                    f"{path}.{key}"
+                )
+            )
+
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            if isinstance(child, (dict, list)):
+                matches.extend(
+                    find_camera_lists(
+                        child,
+                        f"{path}[{index}]"
+                    )
+                )
+
+    return matches
+
+
+def extract_camera_list(config):
+    """
+    Unterstützt:
+    - cameras direkt auf oberster Ebene
+    - verschachtelte cameras-Listen
+    - eine Kameraliste als YAML-Wurzel
+    """
+    if is_camera_entry_list(config):
+        print("Kameraliste gefunden unter: root")
+        return config
+
+    if isinstance(config, dict):
+        direct = config.get("cameras")
+
+        if is_camera_entry_list(direct):
+            print("Kameraliste gefunden unter: root.cameras")
+            return direct
+
+    matches = find_camera_lists(config)
+
+    # Doppelte Fundstellen anhand ihrer Objekt-ID entfernen.
+    unique_matches = []
+    seen_ids = set()
+
+    for found_path, camera_list in matches:
+        object_id = id(camera_list)
+
+        if object_id in seen_ids:
+            continue
+
+        seen_ids.add(object_id)
+        unique_matches.append(
+            (found_path, camera_list)
+        )
+
+    if len(unique_matches) == 1:
+        found_path, camera_list = unique_matches[0]
+        print(f"Kameraliste gefunden unter: {found_path}")
+        return camera_list
+
+    if len(unique_matches) == 0:
+        root_type = type(config).__name__
+
+        if isinstance(config, dict):
+            root_keys = ", ".join(
+                str(key)
+                for key in config.keys()
+            )
+        else:
+            root_keys = "keine"
+
+        raise RuntimeError(
+            "Keine Kameraliste mit den Feldern name und "
+            "device_index gefunden. "
+            f"YAML-Wurzeltyp={root_type}; "
+            f"Schlüssel={root_keys}"
+        )
+
+    locations = ", ".join(
+        found_path
+        for found_path, _ in unique_matches
+    )
+
+    raise RuntimeError(
+        "Mehrere mögliche Kameralisten gefunden: "
+        + locations
+    )
+
+
+def apply_device_indices_from_config():
+    """
+    Liest die aktuellen USB-Kameraindizes anhand der Kameranamen
+    aus der lokalen config.yaml und trägt sie in DEVICES ein.
+    """
+    config = load_yaml(CAMERA_INDEX_CONFIG)
+
+    if not isinstance(config, dict):
+        raise RuntimeError(
+            "config.yaml konnte nicht geladen werden."
+        )
+
+    config_path = (
+        BASE / CAMERA_INDEX_CONFIG
+    ).resolve()
+
+    print(
+        f"Kamera-Konfiguration: {config_path}"
+    )
+
+    cameras = extract_camera_list(config)
+
+    configured_indices = {}
+
+    for camera in cameras:
+        if not isinstance(camera, dict):
+            continue
+
+        if camera.get("enabled", True) is False:
+            continue
+
+        name = camera.get("name")
+        device_index = camera.get("device_index")
+
+        if name is None or device_index is None:
+            continue
+
+        normalized_name = normalize_camera_name(name)
+
+        try:
+            parsed_index = int(device_index)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Ungültiger device_index für Kamera {name!r}: "
+                f"{device_index!r}"
+            ) from exc
+
+        if (
+            normalized_name in configured_indices
+            and configured_indices[normalized_name] != parsed_index
+        ):
+            raise RuntimeError(
+                f"Kamera {name!r} ist in config.yaml mehrfach "
+                "mit verschiedenen Indizes eingetragen."
+            )
+
+        configured_indices[normalized_name] = parsed_index
+
+    missing = []
+
+    for device in DEVICES:
+        normalized_name = normalize_camera_name(
+            device["name"]
+        )
+
+        if normalized_name not in configured_indices:
+            missing.append(device["name"])
+            continue
+
+        device["index"] = configured_indices[normalized_name]
+
+    if missing:
+        raise RuntimeError(
+            "Folgende aktiv benötigte Kameras fehlen in config.yaml: "
+            + ", ".join(missing)
+        )
+
+    print("Kameraindizes aus config.yaml geladen:")
+
+    for device in DEVICES:
+        print(
+            f"  {device['name']}: "
+            f"index={device['index']} | "
+            f"Capture={device['width']}x{device['height']}"
+        )
+
 
 def as_np_matrix(value):
     if value is None:
@@ -160,6 +386,7 @@ def robust_stats(values):
     return med, mad
 
 def open_devices():
+    apply_device_indices_from_config()
     opened = []
     configs = {}
     for dev in DEVICES:
