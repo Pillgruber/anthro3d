@@ -20,10 +20,10 @@ MIN_SAMPLES_PER_PAIR = 20
 TIME_LIMIT_SEC = 35.0
 
 DEVICES = [
-    {"name": "ELP2", "index": 0, "width": 1280, "height": 480, "split": True, "config": "stereo_config.yaml"},
-    {"name": "ELP1", "index": 3, "width": 1280, "height": 480, "split": True, "config": "stereo_config_elp1.yaml"},
-    {"name": "OV9281_L", "index": 1, "width": 1280, "height": 800, "split": False, "side": "l", "config": "stereo_config_ov9281.yaml"},
-    {"name": "OV9281_R", "index": 2, "width": 1280, "height": 800, "split": False, "side": "r", "config": "stereo_config_ov9281.yaml"},
+    {"name": "ELP2", "index": 0, "width": 2560, "height": 720, "split": True, "config": "stereo_config.yaml", "calib_view_width": 1280, "calib_view_height": 720},
+    {"name": "ELP1", "index": 3, "width": 3200, "height": 1200, "split": True, "config": "stereo_config_elp1.yaml", "calib_view_width": 1600, "calib_view_height": 1200},
+    {"name": "OV9281_L", "index": 1, "width": 1280, "height": 800, "split": False, "side": "l", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
+    {"name": "OV9281_R", "index": 2, "width": 1280, "height": 800, "split": False, "side": "r", "config": "stereo_config_ov9281.yaml", "calib_view_width": 1280, "calib_view_height": 800},
 ]
 
 def load_yaml(path):
@@ -52,6 +52,75 @@ def get_intrinsics(config, side):
     if K is None or dist is None:
         return None, None
     return K, dist
+
+
+# SCALED_VIEW_INTRINSICS
+_PRINTED_VIEW_INTRINSICS = set()
+
+
+def scale_camera_matrix(K, calibration_size, image_size):
+    """
+    Skaliert fx, fy, cx und cy von der Kalibrierauflösung
+    auf die tatsächlich gelieferte Bildauflösung.
+    """
+    if K is None:
+        return None
+
+    calibration_width, calibration_height = calibration_size
+    image_width, image_height = image_size
+
+    if (
+        calibration_width <= 0
+        or calibration_height <= 0
+        or image_width <= 0
+        or image_height <= 0
+    ):
+        raise ValueError(
+            "Ungültige Kalibrier- oder Bildauflösung."
+        )
+
+    scale_x = image_width / float(calibration_width)
+    scale_y = image_height / float(calibration_height)
+
+    scaled = np.asarray(
+        K,
+        dtype=np.float64
+    ).copy()
+
+    scaled[0, 0] *= scale_x
+    scaled[0, 2] *= scale_x
+
+    scaled[1, 1] *= scale_y
+    scaled[1, 2] *= scale_y
+
+    return scaled
+
+
+def print_view_intrinsics_once(
+    name,
+    K,
+    calibration_size,
+    image_size
+):
+    if name in _PRINTED_VIEW_INTRINSICS:
+        return
+
+    _PRINTED_VIEW_INTRINSICS.add(name)
+
+    if K is None:
+        print(f"{name}: keine Intrinsik vorhanden")
+        return
+
+    calibration_width, calibration_height = calibration_size
+    image_width, image_height = image_size
+
+    print(
+        f"{name}: Bild={image_width}x{image_height} | "
+        f"Kalibrierung={calibration_width}x{calibration_height} | "
+        f"fx={K[0,0]:.2f} fy={K[1,1]:.2f} "
+        f"cx={K[0,2]:.2f} cy={K[1,2]:.2f}"
+    )
+
 
 def marker_object_points():
     s = MARKER_SIZE_M / 2.0
@@ -111,18 +180,97 @@ def open_devices():
 
 def make_views(dev, frame, cfg):
     views = []
+
+    calibration_size = (
+        int(dev["calib_view_width"]),
+        int(dev["calib_view_height"]),
+    )
+
     if dev["split"]:
-        h, w = frame.shape[:2]
-        mid = w // 2
-        left = frame[:, :mid].copy()
-        right = frame[:, mid:].copy()
+        height, width = frame.shape[:2]
+        middle = width // 2
+
+        left = frame[:, :middle].copy()
+        right = frame[:, middle:].copy()
+
         K_l, dist_l = get_intrinsics(cfg, "l")
         K_r, dist_r = get_intrinsics(cfg, "r")
-        views.append((dev["name"] + "_L", left, K_l, dist_l))
-        views.append((dev["name"] + "_R", right, K_r, dist_r))
+
+        left_size = (
+            int(left.shape[1]),
+            int(left.shape[0]),
+        )
+
+        right_size = (
+            int(right.shape[1]),
+            int(right.shape[0]),
+        )
+
+        K_l = scale_camera_matrix(
+            K_l,
+            calibration_size,
+            left_size
+        )
+
+        K_r = scale_camera_matrix(
+            K_r,
+            calibration_size,
+            right_size
+        )
+
+        left_name = dev["name"] + "_L"
+        right_name = dev["name"] + "_R"
+
+        print_view_intrinsics_once(
+            left_name,
+            K_l,
+            calibration_size,
+            left_size
+        )
+
+        print_view_intrinsics_once(
+            right_name,
+            K_r,
+            calibration_size,
+            right_size
+        )
+
+        views.append(
+            (left_name, left, K_l, dist_l)
+        )
+
+        views.append(
+            (right_name, right, K_r, dist_r)
+        )
+
     else:
-        K, dist = get_intrinsics(cfg, dev["side"])
-        views.append((dev["name"], frame.copy(), K, dist))
+        K, dist = get_intrinsics(
+            cfg,
+            dev["side"]
+        )
+
+        image_size = (
+            int(frame.shape[1]),
+            int(frame.shape[0]),
+        )
+
+        K = scale_camera_matrix(
+            K,
+            calibration_size,
+            image_size
+        )
+
+        print_view_intrinsics_once(
+            dev["name"],
+            K,
+            calibration_size,
+            image_size
+        )
+
+        views.append(
+            (dev["name"], frame.copy(), K, dist)
+        )
+
     return views
 
 def detect_poses(gray, aruco_dict, params, K, dist):

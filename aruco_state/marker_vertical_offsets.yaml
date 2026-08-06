@@ -2,139 +2,219 @@ OV9281_STAND:
   top_id: 2
   bottom_id: 20
   pooled:
-    samples: 160
+    samples: 320
     offset_local_cm_median:
-    - 9.007640604021514
-    - -18.48105078801975
-    - 32.22174299980422
+    - 0.04858650198622822
+    - -34.98498470057154
+    - 0.15338443387623518
     offset_local_cm_mad:
-    - 0.6909986812193303
-    - 0.2693594673819355
-    - 2.353924954943704
-    distance_cm_median: 38.090060864857335
-    distance_cm_mad: 2.240709786371518
-    rotation_angle_deg_median: 17.011804373113815
-    rotation_angle_deg_mad: 1.2288957312744744
-    reprojection_top_px_median: 1.1752849817276
-    reprojection_bottom_px_median: 0.9026054441928864
+    - 0.14241539934088276
+    - 0.08522282092828704
+    - 0.3795076692271194
+    distance_cm_median: 34.988287567761994
+    distance_cm_mad: 0.0865264929455023
+    rotation_angle_deg_median: 3.3411543106526596
+    rotation_angle_deg_mad: 1.2295953450939208
+    reprojection_top_px_median: 0.13520987331867218
+    reprojection_bottom_px_median: 0.254482626914978
   views:
+    ELP1_L:
+      samples: 80
+      offset_local_cm_median:
+      - 0.041480977087176685
+      - -34.96369557619066
+      - -0.3367926015765961
+      offset_local_cm_mad:
+      - 0.03477703782321118
+      - 0.028622121306199233
+      - 0.09189026702739818
+      distance_cm_median: 34.96530144245775
+      distance_cm_mad: 0.030156361435636825
+      rotation_angle_deg_median: 4.036580840600057
+      rotation_angle_deg_mad: 0.10153015027469214
+      reprojection_top_px_median: 0.13175515830516815
+      reprojection_bottom_px_median: 0.3270978778600693
+    ELP1_R:
+      samples: 80
+      offset_local_cm_median:
+      - 0.2970756247245907
+      - -34.8828653103992
+      - 0.051333809121373516
+      offset_local_cm_mad:
+      - 0.03690148507373864
+      - 0.03200595309050769
+      - 0.09450775988508087
+      distance_cm_median: 34.88428004197509
+      distance_cm_mad: 0.031832490475025566
+      rotation_angle_deg_median: 4.830273742163178
+      rotation_angle_deg_mad: 0.10969343529033937
+      reprojection_top_px_median: 0.20380355417728424
+      reprojection_bottom_px_median: 0.33256009221076965
     ELP2_L:
       samples: 80
       offset_local_cm_median:
-      - 8.309224343377199
-      - -18.270392219296646
-      - 29.704638977760666
+      - 0.06207143258921233
+      - -35.03138366954272
+      - 0.3238988823948564
       offset_local_cm_mad:
-      - 0.1392180985040543
-      - 0.2047736302030536
-      - 0.4829559625404638
-      distance_cm_median: 35.86040275215575
-      distance_cm_mad: 0.33333155669416925
-      rotation_angle_deg_median: 15.676800234762116
-      rotation_angle_deg_mad: 0.336632545201093
-      reprojection_top_px_median: 1.1478677988052368
-      reprojection_bottom_px_median: 0.8718972206115723
+      - 0.08881361500277271
+      - 0.05017460565938592
+      - 0.17206280686728792
+      distance_cm_median: 35.03249799635863
+      distance_cm_mad: 0.04890760986344489
+      rotation_angle_deg_median: 1.8490097143425062
+      rotation_angle_deg_mad: 0.17690826843979468
+      reprojection_top_px_median: 0.06288865208625793
+      reprojection_bottom_px_median: 0.17249128967523575
     ELP2_R:
       samples: 80
       offset_local_cm_median:
-      - 9.650757795284125
-      - -18.629714628765246
-      - 34.3992315056283
+      - -0.1994448255728012
+      - -35.46092793181691
+      - 0.9749544432234809
       offset_local_cm_mad:
-      - 0.17563472316332174
-      - 0.22283701868880712
-      - 0.46965012345120627
-      distance_cm_median: 40.34147814704116
-      distance_cm_mad: 0.3521287445268726
-      rotation_angle_deg_median: 18.185159201788927
-      rotation_angle_deg_mad: 0.38478407163642814
-      reprojection_top_px_median: 1.2226330041885376
-      reprojection_bottom_px_median: 0.967576414346695
+      - 0.07471200569038708
+      - 0.05008860426953632
+      - 0.20305335533547603
+      distance_cm_median: 35.47399902608086
+      distance_cm_mad: 0.04632888909370081
+      rotation_angle_deg_median: 2.4590786009270498
+      rotation_angle_deg_mad: 0.23889669784226508
+      reprojection_top_px_median: 0.14622630923986435
+      reprojection_bottom_px_median: 0.1711777225136757
 ELP1_STAND:
   top_id: 3
   bottom_id: 30
   pooled:
-    samples: 79
+    samples: 160
     offset_local_cm_median:
-    - 21.81831568257658
-    - -37.80237393424639
-    - 32.559501496336416
+    - 0.3222640020410852
+    - -35.356009679085595
+    - 0.09475582146046378
     offset_local_cm_mad:
-    - 0.8449832644148607
-    - 0.18739447238805695
-    - 1.6051877123911673
-    distance_cm_median: 54.34844144423066
-    distance_cm_mad: 1.2848596935707874
-    rotation_angle_deg_median: 13.225753635632232
-    rotation_angle_deg_mad: 0.40459097554971635
-    reprojection_top_px_median: 0.49458783864974976
-    reprojection_bottom_px_median: 0.7508542537689209
+    - 0.06797956950451031
+    - 0.3013476669136317
+    - 0.0912869416734666
+    distance_cm_median: 35.359100556432026
+    distance_cm_mad: 0.299064791865419
+    rotation_angle_deg_median: 0.7838310646072688
+    rotation_angle_deg_mad: 0.10624318186781306
+    reprojection_top_px_median: 0.21916699409484863
+    reprojection_bottom_px_median: 0.13903412222862244
   views:
-    ELP1_L:
-      samples: 79
+    ELP2_L:
+      samples: 80
       offset_local_cm_median:
-      - 21.81831568257658
-      - -37.80237393424639
-      - 32.559501496336416
+      - 0.36547756637025963
+      - -35.018401143850056
+      - 0.07136581914290333
       offset_local_cm_mad:
-      - 0.8449832644148607
-      - 0.18739447238805695
-      - 1.6051877123911673
-      distance_cm_median: 54.34844144423066
-      distance_cm_mad: 1.2848596935707874
-      rotation_angle_deg_median: 13.225753635632232
-      rotation_angle_deg_mad: 0.40459097554971635
-      reprojection_top_px_median: 0.49458783864974976
-      reprojection_bottom_px_median: 0.7508542537689209
+      - 0.04380854592415015
+      - 0.033980724057787626
+      - 0.08110444884844278
+      distance_cm_median: 35.02026395554171
+      distance_cm_mad: 0.03365501423554562
+      rotation_angle_deg_median: 0.7025995748077523
+      rotation_angle_deg_mad: 0.06759498739253389
+      reprojection_top_px_median: 0.2529660761356354
+      reprojection_bottom_px_median: 0.13864253461360931
+    ELP2_R:
+      samples: 80
+      offset_local_cm_median:
+      - 0.2599847500624747
+      - -35.60186469795316
+      - 0.1332915495357826
+      offset_local_cm_mad:
+      - 0.05835320134935079
+      - 0.038338955550209164
+      - 0.09932906126986701
+      distance_cm_median: 35.602863753415555
+      distance_cm_mad: 0.036456387247628896
+      rotation_angle_deg_median: 0.9013771409829744
+      rotation_angle_deg_mad: 0.08239026175031156
+      reprojection_top_px_median: 0.1860860511660576
+      reprojection_bottom_px_median: 0.139717698097229
 ELP2_STAND:
   top_id: 4
   bottom_id: 40
   pooled:
-    samples: 160
+    samples: 320
     offset_local_cm_median:
-    - 0.5885374584101994
-    - -34.571427393054975
-    - 0.9881249287345939
+    - -0.4089866003017145
+    - -34.31724805081134
+    - 0.9056968313145417
     offset_local_cm_mad:
-    - 0.5385889285149843
-    - 0.3874113360818541
-    - 1.2017012597571517
-    distance_cm_median: 34.59815636930814
-    distance_cm_mad: 0.3324418042584014
-    rotation_angle_deg_median: 1.395463384814199
-    rotation_angle_deg_mad: 0.785947249182968
-    reprojection_top_px_median: 0.1826666221022606
-    reprojection_bottom_px_median: 0.16736121475696564
+    - 0.2664378609091585
+    - 0.11519850076151528
+    - 0.35505516970061757
+    distance_cm_median: 34.33498990145905
+    distance_cm_mad: 0.10997939518259514
+    rotation_angle_deg_median: 1.198705213375872
+    rotation_angle_deg_mad: 0.32895958496481076
+    reprojection_top_px_median: 0.24651651829481125
+    reprojection_bottom_px_median: 0.18492848426103592
   views:
+    ELP1_L:
+      samples: 80
+      offset_local_cm_median:
+      - -0.5264412224452206
+      - -34.27470170884929
+      - 0.7225134893106959
+      offset_local_cm_mad:
+      - 0.035740634772551266
+      - 0.027326878811678057
+      - 0.0903682710119495
+      distance_cm_median: 34.28772132947503
+      distance_cm_mad: 0.026890502958121232
+      rotation_angle_deg_median: 1.4752242383497987
+      rotation_angle_deg_mad: 0.1277605363745199
+      reprojection_top_px_median: 0.3117651492357254
+      reprojection_bottom_px_median: 0.2599339783191681
+    ELP1_R:
+      samples: 80
+      offset_local_cm_median:
+      - -0.6859822344048858
+      - -34.14115644937954
+      - 1.297982599487268
+      offset_local_cm_mad:
+      - 0.03729290293685844
+      - 0.035182837031285885
+      - 0.10263665618376971
+      distance_cm_median: 34.17512610293859
+      distance_cm_mad: 0.02992046291544881
+      rotation_angle_deg_median: 1.5252471849072768
+      rotation_angle_deg_mad: 0.17161953722447565
+      reprojection_top_px_median: 0.3258209377527237
+      reprojection_bottom_px_median: 0.3220388889312744
     OV9281_L:
       samples: 80
       offset_local_cm_median:
-      - 0.09643272113344543
-      - -34.94709020002783
-      - -0.13536730015364773
+      - -0.17422630233360353
+      - -34.94863927281634
+      - -0.6329140823870018
       offset_local_cm_mad:
-      - 0.09637054015858822
-      - 0.04145810075330303
-      - 0.17454268801355394
-      distance_cm_median: 34.94797246067597
-      distance_cm_mad: 0.04258454748213225
-      rotation_angle_deg_median: 0.5726697061007572
-      rotation_angle_deg_mad: 0.14297741410439752
-      reprojection_top_px_median: 0.24670414626598358
-      reprojection_bottom_px_median: 0.14119898527860641
+      - 0.0672320449767205
+      - 0.026330580865916886
+      - 0.1254465611243692
+      distance_cm_median: 34.957687805241164
+      distance_cm_mad: 0.029087595933678045
+      rotation_angle_deg_median: 0.6387493726430423
+      rotation_angle_deg_mad: 0.1088461305265957
+      reprojection_top_px_median: 0.16040941327810287
+      reprojection_bottom_px_median: 0.07804232835769653
     OV9281_R:
       samples: 80
       offset_local_cm_median:
-      - 1.221344653965974
-      - -34.177392416444874
-      - 2.2738074958302903
+      - 0.6877565233659382
+      - -34.35141291187168
+      - 1.1268430054670429
       offset_local_cm_mad:
-      - 0.10488758540255827
-      - 0.047090650794327615
-      - 0.23902982290416253
-      distance_cm_median: 34.27345584826875
-      distance_cm_mad: 0.03161429341467681
-      rotation_angle_deg_median: 2.101664610784156
-      rotation_angle_deg_mad: 0.25381730748834475
-      reprojection_top_px_median: 0.15467102825641632
-      reprojection_bottom_px_median: 0.2040208950638771
+      - 0.05481333108239406
+      - 0.03110472409478504
+      - 0.10811901133640422
+      distance_cm_median: 34.3785133175612
+      distance_cm_mad: 0.026702841651772502
+      rotation_angle_deg_median: 1.0234405851241453
+      rotation_angle_deg_mad: 0.11954797593110178
+      reprojection_top_px_median: 0.12357760965824127
+      reprojection_bottom_px_median: 0.10813643038272858
