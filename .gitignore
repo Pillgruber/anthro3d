@@ -7,3 +7,5 @@ calib_elp2_charuco_clean/
 
 .venv312/
 output/
+.venv-avfoundation/
+camera_registry.local.yaml

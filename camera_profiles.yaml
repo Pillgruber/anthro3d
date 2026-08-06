@@ -1,0 +1,62 @@
+version: 1
+
+profiles:
+  generic_mono:
+    backend: avfoundation
+    enabled: true
+    required: true
+    stream:
+      fps: 30
+      pixel_format: BGRA
+    layout:
+      type: mono
+      views:
+        - view_id: main
+
+  mono_1280x800:
+    backend: avfoundation
+    enabled: true
+    required: true
+    stream:
+      width: 1280
+      height: 800
+      fps: 30
+      pixel_format: BGRA
+    layout:
+      type: mono
+      views:
+        - view_id: main
+
+  stereo_side_by_side_2560x720:
+    backend: avfoundation
+    enabled: true
+    required: true
+    stream:
+      width: 2560
+      height: 720
+      fps: 30
+      pixel_format: BGRA
+    layout:
+      type: side_by_side
+      views:
+        - view_id: left
+          side: left
+        - view_id: right
+          side: right
+
+  stereo_side_by_side_3200x1200:
+    backend: avfoundation
+    enabled: true
+    required: true
+    stream:
+      width: 3200
+      height: 1200
+      fps: 30
+      pixel_format: BGRA
+    layout:
+      type: side_by_side
+      views:
+        - view_id: left
+          side: left
+        - view_id: right
+          side: right
