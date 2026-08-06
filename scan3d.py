@@ -468,6 +468,143 @@ def make_person_mask(frame_bgr, seg, target_shape, name="cam", min_pixels=800):
 
 
 
+# NATIVE_DYNAMIC_CAMERA_CONFIG_PHASE1
+CAMERA_CONFIG_PATH = Path("~/anthro3d/config.yaml").expanduser()
+
+ELP2_CAPTURE_SIZE = (2560, 720)
+ELP1_CAPTURE_SIZE = (3200, 1200)
+OV9281_CAPTURE_SIZE = (1280, 800)
+
+ELP2_VIEW_SIZE = (1280, 720)
+ELP1_VIEW_SIZE = (1600, 1200)
+OV9281_VIEW_SIZE = (1280, 800)
+
+
+def _normalize_camera_name(name):
+    return "".join(
+        character
+        for character in str(name).casefold()
+        if character.isalnum()
+    )
+
+
+def _load_camera_indices():
+    with CAMERA_CONFIG_PATH.open("r", encoding="utf-8") as file:
+        configuration = yaml.safe_load(file)
+
+    try:
+        cameras = configuration["cameras"]["tracking"]
+    except (TypeError, KeyError) as exc:
+        raise RuntimeError(
+            "Kameraliste root.cameras.tracking fehlt in "
+            f"{CAMERA_CONFIG_PATH}"
+        ) from exc
+
+    configured = {}
+
+    for camera in cameras:
+        if not isinstance(camera, dict):
+            continue
+
+        if camera.get("enabled", True) is False:
+            continue
+
+        name = camera.get("name")
+        device_index = camera.get("device_index")
+
+        if name is None or device_index is None:
+            continue
+
+        configured[_normalize_camera_name(name)] = int(device_index)
+
+    result = {}
+    missing = []
+
+    for required_name in ("ELP2", "ELP1", "OV9281_L", "OV9281_R"):
+        key = _normalize_camera_name(required_name)
+
+        if key not in configured:
+            missing.append(required_name)
+        else:
+            result[required_name] = configured[key]
+
+    if missing:
+        raise RuntimeError(
+            "Folgende Kameras fehlen in config.yaml: "
+            + ", ".join(missing)
+        )
+
+    if len(set(result.values())) != len(result):
+        raise RuntimeError(
+            "Mindestens zwei Kameras verwenden denselben device_index: "
+            f"{result}"
+        )
+
+    print(f"Kameraindizes aus {CAMERA_CONFIG_PATH} geladen:")
+    print(
+        f"  ELP2: index={result['ELP2']} "
+        f"Capture={ELP2_CAPTURE_SIZE[0]}x{ELP2_CAPTURE_SIZE[1]}"
+    )
+    print(
+        f"  ELP1: index={result['ELP1']} "
+        f"Capture={ELP1_CAPTURE_SIZE[0]}x{ELP1_CAPTURE_SIZE[1]}"
+    )
+    print(
+        f"  OV9281_L: index={result['OV9281_L']} "
+        f"Capture={OV9281_CAPTURE_SIZE[0]}x{OV9281_CAPTURE_SIZE[1]}"
+    )
+    print(
+        f"  OV9281_R: index={result['OV9281_R']} "
+        f"Capture={OV9281_CAPTURE_SIZE[0]}x{OV9281_CAPTURE_SIZE[1]}"
+    )
+
+    return result
+
+
+def _open_camera(name, index, capture_size):
+    width, height = capture_size
+
+    cap = cv2.VideoCapture(index)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError(
+            f"{name}: Kamera Index {index} konnte nicht geöffnet werden."
+        )
+
+    reported_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    reported_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    print(
+        f"{name}: offen index={index} | "
+        f"angefordert={width}x{height} | "
+        f"gemeldet={reported_width}x{reported_height}"
+    )
+
+    return cap
+
+
+def _assert_frame_size(frame, name, expected_size):
+    expected_width, expected_height = expected_size
+    actual_height, actual_width = frame.shape[:2]
+
+    if (
+        actual_width != expected_width
+        or actual_height != expected_height
+    ):
+        raise RuntimeError(
+            f"{name}: tatsächliches Frame "
+            f"{actual_width}x{actual_height}; "
+            f"erwartet {expected_width}x{expected_height}"
+        )
+
+
+CAMERA_INDICES = _load_camera_indices()
+
+
 with open(Path("~/anthro3d/stereo_config.yaml").expanduser()) as f:
     cfg2 = yaml.safe_load(f)
 with open(Path("~/anthro3d/stereo_config_elp1.yaml").expanduser()) as f:
@@ -484,8 +621,18 @@ def make_maps_split(cfg, size=(1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha
     mr1,mr2=cv2.initUndistortRectifyMap(K_r,d_r,R2,P2,size,cv2.CV_32F)
     return ml1,ml2,mr1,mr2,P1[0,0],P1[0,2],P1[1,2],abs(T.flatten()[0]),R1
 
-ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2,R1_2 = make_maps_split(cfg2, (1600,1200), flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
-print(f"ELP2 Rectify TEST alpha=-1: fx={fx2:.1f} cx={cx2:.1f} cy={cy2:.1f} baseline={bl2*100:.1f}cm")
+ml2_1,ml2_2,mr2_1,mr2_2,fx2,cx2,cy2,bl2,R1_2 = make_maps_split(
+    cfg2,
+    ELP2_VIEW_SIZE,
+    flags=cv2.CALIB_ZERO_DISPARITY,
+    alpha=-1
+)
+print(
+    f"ELP2 Rectify nativ alpha=-1: "
+    f"Größe={ELP2_VIEW_SIZE[0]}x{ELP2_VIEW_SIZE[1]} "
+    f"fx={fx2:.1f} cx={cx2:.1f} cy={cy2:.1f} "
+    f"baseline={bl2*100:.1f}cm"
+)
 ml1_1,ml1_2,mr1_1,mr1_2,fx1,cx1,cy1,bl1,R1_1 = make_maps_split(cfg1, (1600,1200))
 mlov1,mlov2,mrov1,mrov2,fxov,cxov,cyov,blov,R1_ov = make_maps_split(cfgov, (1280,800), flags=0, alpha=-1)
 print(f"OV9281 Rectify aktiv: fx={fxov:.1f} cx={cxov:.1f} cy={cyov:.1f} baseline={blov*100:.1f}cm flags=0")
@@ -508,17 +655,36 @@ obj_pts = np.array([[-MARKER_SIZE/2, MARKER_SIZE/2,0],
 K2_raw  = np.array(cfg2['camera_matrix_l']);  d2_raw  = np.array(cfg2['dist_l'])
 Kov_raw = np.array(cfgov['camera_matrix_l']); dov_raw = np.array(cfgov['dist_l'])
 
-cap2_cal  = cv2.VideoCapture(0)
-cap2_cal.set(cv2.CAP_PROP_FRAME_WIDTH,3200); cap2_cal.set(cv2.CAP_PROP_FRAME_HEIGHT,1200)
-capovL_cal = cv2.VideoCapture(1)
-capovL_cal.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovL_cal.set(cv2.CAP_PROP_FRAME_HEIGHT,800)
+cap2_cal = _open_camera(
+    "ELP2 Kalibrierung",
+    CAMERA_INDICES["ELP2"],
+    ELP2_CAPTURE_SIZE
+)
+capovL_cal = _open_camera(
+    "OV9281_L Kalibrierung",
+    CAMERA_INDICES["OV9281_L"],
+    OV9281_CAPTURE_SIZE
+)
 
 R_ov_list=[]; T_ov_list=[]
 print("OV9281→ELP2 kalibrieren (Marker ID 10, 50 Frames)...")
 for _ in range(50):
-    ret2,f2   = cap2_cal.read()
-    retov,fov = capovL_cal.read()
-    if not ret2 or not retov: continue
+    ret2, f2 = cap2_cal.read()
+    retov, fov = capovL_cal.read()
+
+    if not ret2 or not retov:
+        continue
+
+    _assert_frame_size(
+        f2,
+        "ELP2 Kalibrierung",
+        ELP2_CAPTURE_SIZE
+    )
+    _assert_frame_size(
+        fov,
+        "OV9281_L Kalibrierung",
+        OV9281_CAPTURE_SIZE
+    )
     fl2 = f2[:, :f2.shape[1]//2]
     g2  = cv2.cvtColor(fl2, cv2.COLOR_BGR2GRAY)
     gov = cv2.cvtColor(fov, cv2.COLOR_BGR2GRAY)
@@ -580,14 +746,26 @@ wls_ov = cv2.ximgproc.createDisparityWLSFilter(lm_ov)
 wls_ov.setLambda(8000); wls_ov.setSigmaColor(1.5)
 
 # Kameras öffnen
-cap2  = cv2.VideoCapture(0)
-cap2.set(cv2.CAP_PROP_FRAME_WIDTH,3200);  cap2.set(cv2.CAP_PROP_FRAME_HEIGHT,1200)
-cap1  = cv2.VideoCapture(3)
-cap1.set(cv2.CAP_PROP_FRAME_WIDTH,3200);  cap1.set(cv2.CAP_PROP_FRAME_HEIGHT,1200)
-capovL = cv2.VideoCapture(1)
-capovL.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovL.set(cv2.CAP_PROP_FRAME_HEIGHT,800)
-capovR = cv2.VideoCapture(2)
-capovR.set(cv2.CAP_PROP_FRAME_WIDTH,1280); capovR.set(cv2.CAP_PROP_FRAME_HEIGHT,800)
+cap2 = _open_camera(
+    "ELP2",
+    CAMERA_INDICES["ELP2"],
+    ELP2_CAPTURE_SIZE
+)
+cap1 = _open_camera(
+    "ELP1",
+    CAMERA_INDICES["ELP1"],
+    ELP1_CAPTURE_SIZE
+)
+capovL = _open_camera(
+    "OV9281_L",
+    CAMERA_INDICES["OV9281_L"],
+    OV9281_CAPTURE_SIZE
+)
+capovR = _open_camera(
+    "OV9281_R",
+    CAMERA_INDICES["OV9281_R"],
+    OV9281_CAPTURE_SIZE
+)
 
 def get_disp_split(
     cap,
@@ -614,7 +792,26 @@ def get_disp_split(
             return None, None, None, None, None
         return None, None
 
-    width = frame.shape[1] // 2
+    expected_height, expected_half_width = ml1.shape[:2]
+    actual_height, actual_width = frame.shape[:2]
+    expected_full_width = expected_half_width * 2
+
+    if (
+        actual_width != expected_full_width
+        or actual_height != expected_height
+    ):
+        print(
+            "Stereo-Frame passt nicht zu Rectify-Maps: "
+            f"Frame={actual_width}x{actual_height}, "
+            f"erwartet={expected_full_width}x{expected_height}"
+        )
+
+        if return_views:
+            return None, None, None, None, None
+
+        return None, None
+
+    width = actual_width // 2
 
     raw_l = frame[:, :width].copy()
     raw_r = frame[:, width:].copy()
