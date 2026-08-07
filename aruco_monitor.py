@@ -39,10 +39,17 @@ class ArucoMonitor:
 
     KNOWN_MARKER_IDS = {2, 3, 4, 20, 30, 40}
 
+    # Aktuelle ANTHRO3D-Multimarker-Topologie:
+    #
+    # OV9281-Stativ: ID 2 / 20
+    # ELP1-Stativ:   ID 3 / 30
+    # ELP2-Stativ:   ID 4 / 40
+    #
+    # Jede Kamerastation sieht die Marker der beiden anderen Stative.
     EXPECTED_VISIBLE_MARKERS = {
-        "ELP2": {2, 3},
-        "ELP1": {2, 10},
-        "OV9281": {3, 10},
+        "ELP2": {2, 3, 20, 30},
+        "ELP1": {2, 4, 20, 40},
+        "OV9281": {3, 4, 30, 40},
     }
 
     EXPECTED_BASELINE_M = {
@@ -248,10 +255,14 @@ class ArucoMonitor:
             rules["OV9281_to_ELP1"] = {
                 "target": "ELP1",
                 "source": "OV9281",
-                "marker": 10,
+                # Beide sehen das ELP2-Stativ.
+                # Phase 2A nutzt zunächst den Primärmarker ID4.
+                # ID40 wird in Phase 2B als redundanter zweiter
+                # Geometrieanker ergänzt.
+                "marker": 4,
                 "required": False,
-                "R_file": None,
-                "T_file": None,
+                "R_file": "R_rel_ov9281_to_elp1.npy",
+                "T_file": "T_rel_ov9281_to_elp1.npy",
             }
 
         return rules
