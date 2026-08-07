@@ -1,0 +1,36 @@
+version: 1
+
+# Beispiel für die Scan-Capture-Registry.
+# Die echte Maschinenzuordnung liegt in camera_registry.scan.local.yaml.
+cameras:
+  ELP1:
+    unique_id: "REPLACE_ME"
+    width: 3200
+    height: 1200
+    fps: 30.0
+    role: "ELP1"
+    confirmed: false
+
+  ELP2:
+    unique_id: "REPLACE_ME"
+    width: 2560
+    height: 720
+    fps: 30.0
+    role: "ELP2"
+    confirmed: false
+
+  OV9281_L:
+    unique_id: "REPLACE_ME"
+    width: 1280
+    height: 800
+    fps: 30.0
+    role: "OV9281_L"
+    confirmed: false
+
+  OV9281_R:
+    unique_id: "REPLACE_ME"
+    width: 1280
+    height: 800
+    fps: 30.0
+    role: "OV9281_R"
+    confirmed: false

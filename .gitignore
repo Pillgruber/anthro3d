@@ -9,3 +9,6 @@ calib_elp2_charuco_clean/
 output/
 .venv-avfoundation/
 camera_registry.local.yaml
+
+# Machine-local scan camera uniqueIDs
+camera_registry.scan.local.yaml
