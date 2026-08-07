@@ -210,7 +210,8 @@ def _save_six_camera_snapshot(
             row_ov
         ])
 
-        _SCAN_WINDOW_LAST_FRAME = snapshot.copy()
+        # snapshot selbst bleibt über die globale Referenz erhalten.
+        _SCAN_WINDOW_LAST_FRAME = snapshot
 
         output_dir = _scan_output_dir()
         screenshot_path = (
@@ -468,8 +469,11 @@ def make_person_mask(frame_bgr, seg, target_shape, name="cam", min_pixels=800):
 
 
 
-# NATIVE_DYNAMIC_CAMERA_CONFIG_PHASE1
-CAMERA_CONFIG_PATH = Path("~/anthro3d/config.yaml").expanduser()
+# UNIQUEID_AVFOUNDATION_CAMERA_CONFIG_PHASE7
+from camera_system.scan_capture import (
+    AnthroCameraCapture,
+    get_camera_profile,
+)
 
 ELP2_CAPTURE_SIZE = (2560, 720)
 ELP1_CAPTURE_SIZE = (3200, 1200)
@@ -480,108 +484,110 @@ ELP1_VIEW_SIZE = (1600, 1200)
 OV9281_VIEW_SIZE = (1280, 800)
 
 
-def _normalize_camera_name(name):
-    return "".join(
-        character
-        for character in str(name).casefold()
-        if character.isalnum()
+def _load_camera_sources():
+    required = (
+        "ELP2",
+        "ELP1",
+        "OV9281_L",
+        "OV9281_R",
     )
 
-
-def _load_camera_indices():
-    with CAMERA_CONFIG_PATH.open("r", encoding="utf-8") as file:
-        configuration = yaml.safe_load(file)
-
-    try:
-        cameras = configuration["cameras"]["tracking"]
-    except (TypeError, KeyError) as exc:
-        raise RuntimeError(
-            "Kameraliste root.cameras.tracking fehlt in "
-            f"{CAMERA_CONFIG_PATH}"
-        ) from exc
-
-    configured = {}
-
-    for camera in cameras:
-        if not isinstance(camera, dict):
-            continue
-
-        if camera.get("enabled", True) is False:
-            continue
-
-        name = camera.get("name")
-        device_index = camera.get("device_index")
-
-        if name is None or device_index is None:
-            continue
-
-        configured[_normalize_camera_name(name)] = int(device_index)
+    expected_sizes = {
+        "ELP2": ELP2_CAPTURE_SIZE,
+        "ELP1": ELP1_CAPTURE_SIZE,
+        "OV9281_L": OV9281_CAPTURE_SIZE,
+        "OV9281_R": OV9281_CAPTURE_SIZE,
+    }
 
     result = {}
-    missing = []
 
-    for required_name in ("ELP2", "ELP1", "OV9281_L", "OV9281_R"):
-        key = _normalize_camera_name(required_name)
+    print("Stabile AVFoundation-Kameras aus Scan-Registry:")
 
-        if key not in configured:
-            missing.append(required_name)
-        else:
-            result[required_name] = configured[key]
+    for camera_role in required:
+        profile = get_camera_profile(camera_role)
+        expected_size = expected_sizes[camera_role]
 
-    if missing:
-        raise RuntimeError(
-            "Folgende Kameras fehlen in config.yaml: "
-            + ", ".join(missing)
+        if profile.capture_size != expected_size:
+            raise RuntimeError(
+                f"{camera_role}: Registry-Profil "
+                f"{profile.capture_size[0]}x{profile.capture_size[1]} "
+                f"passt nicht zur erwarteten Scan-Auflösung "
+                f"{expected_size[0]}x{expected_size[1]}."
+            )
+
+        if not profile.confirmed:
+            raise RuntimeError(
+                f"{camera_role}: Hardware-Zuordnung ist "
+                "in der Scan-Registry nicht bestätigt."
+            )
+
+        result[camera_role] = camera_role
+
+        print(
+            f"  {camera_role}: uniqueID={profile.unique_id} | "
+            f"Capture={profile.width}x{profile.height} "
+            f"@ {profile.fps:g} fps"
         )
 
-    if len(set(result.values())) != len(result):
-        raise RuntimeError(
-            "Mindestens zwei Kameras verwenden denselben device_index: "
-            f"{result}"
-        )
+    unique_ids = [
+        get_camera_profile(role).unique_id
+        for role in required
+    ]
 
-    print(f"Kameraindizes aus {CAMERA_CONFIG_PATH} geladen:")
-    print(
-        f"  ELP2: index={result['ELP2']} "
-        f"Capture={ELP2_CAPTURE_SIZE[0]}x{ELP2_CAPTURE_SIZE[1]}"
-    )
-    print(
-        f"  ELP1: index={result['ELP1']} "
-        f"Capture={ELP1_CAPTURE_SIZE[0]}x{ELP1_CAPTURE_SIZE[1]}"
-    )
-    print(
-        f"  OV9281_L: index={result['OV9281_L']} "
-        f"Capture={OV9281_CAPTURE_SIZE[0]}x{OV9281_CAPTURE_SIZE[1]}"
-    )
-    print(
-        f"  OV9281_R: index={result['OV9281_R']} "
-        f"Capture={OV9281_CAPTURE_SIZE[0]}x{OV9281_CAPTURE_SIZE[1]}"
-    )
+    if len(set(unique_ids)) != len(unique_ids):
+        raise RuntimeError(
+            "Mindestens zwei Scan-Rollen verwenden dieselbe uniqueID."
+        )
 
     return result
 
 
-def _open_camera(name, index, capture_size):
+def _open_camera(name, camera_role, capture_size):
     width, height = capture_size
+    profile = get_camera_profile(camera_role)
 
-    cap = cv2.VideoCapture(index)
+    if profile.capture_size != capture_size:
+        raise RuntimeError(
+            f"{name}: Registry-Auflösung "
+            f"{profile.width}x{profile.height} stimmt nicht mit "
+            f"{width}x{height} überein."
+        )
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap = AnthroCameraCapture(
+        camera_role,
+        read_timeout=5.0,
+    )
 
     if not cap.isOpened():
         cap.release()
         raise RuntimeError(
-            f"{name}: Kamera Index {index} konnte nicht geöffnet werden."
+            f"{name}: AVFoundation-Kamera "
+            f"{camera_role} ({profile.unique_id}) "
+            "konnte nicht geöffnet werden."
         )
 
-    reported_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    reported_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    reported_width = int(
+        cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    )
+    reported_height = int(
+        cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    )
+
+    if (
+        reported_width != width
+        or reported_height != height
+    ):
+        cap.release()
+        raise RuntimeError(
+            f"{name}: Capture meldet "
+            f"{reported_width}x{reported_height}; "
+            f"erwartet {width}x{height}."
+        )
 
     print(
-        f"{name}: offen index={index} | "
-        f"angefordert={width}x{height} | "
-        f"gemeldet={reported_width}x{reported_height}"
+        f"{name}: offen role={camera_role} | "
+        f"uniqueID={profile.unique_id} | "
+        f"Capture={reported_width}x{reported_height}"
     )
 
     return cap
@@ -602,7 +608,7 @@ def _assert_frame_size(frame, name, expected_size):
         )
 
 
-CAMERA_INDICES = _load_camera_indices()
+CAMERA_SOURCES = _load_camera_sources()
 
 
 with open(Path("~/anthro3d/stereo_config.yaml").expanduser()) as f:
@@ -657,12 +663,12 @@ Kov_raw = np.array(cfgov['camera_matrix_l']); dov_raw = np.array(cfgov['dist_l']
 
 cap2_cal = _open_camera(
     "ELP2 Kalibrierung",
-    CAMERA_INDICES["ELP2"],
+    CAMERA_SOURCES["ELP2"],
     ELP2_CAPTURE_SIZE
 )
 capovL_cal = _open_camera(
     "OV9281_L Kalibrierung",
-    CAMERA_INDICES["OV9281_L"],
+    CAMERA_SOURCES["OV9281_L"],
     OV9281_CAPTURE_SIZE
 )
 
@@ -748,22 +754,22 @@ wls_ov.setLambda(8000); wls_ov.setSigmaColor(1.5)
 # Kameras öffnen
 cap2 = _open_camera(
     "ELP2",
-    CAMERA_INDICES["ELP2"],
+    CAMERA_SOURCES["ELP2"],
     ELP2_CAPTURE_SIZE
 )
 cap1 = _open_camera(
     "ELP1",
-    CAMERA_INDICES["ELP1"],
+    CAMERA_SOURCES["ELP1"],
     ELP1_CAPTURE_SIZE
 )
 capovL = _open_camera(
     "OV9281_L",
-    CAMERA_INDICES["OV9281_L"],
+    CAMERA_SOURCES["OV9281_L"],
     OV9281_CAPTURE_SIZE
 )
 capovR = _open_camera(
     "OV9281_R",
-    CAMERA_INDICES["OV9281_R"],
+    CAMERA_SOURCES["OV9281_R"],
     OV9281_CAPTURE_SIZE
 )
 
@@ -970,17 +976,52 @@ def refine_person_mask_with_depth(mask, disp, bg_disp, name="cam", min_keep=800)
 
 
 def disp_to_pts(disp, fl, mask, fx, cx, cy, bl):
-    rows,ci = np.where(mask>0)
-    if len(rows)==0: return None,None
-    d=disp[rows,ci]; v=d>4
-    rows=rows[v]; ci=ci[v]; d=d[v]
-    if len(rows)==0: return None,None
-    Z=fx*bl/d; X=(ci-cx)*Z/fx; Y=(rows-cy)*Z/fx
-    pts=np.stack([X,Y,Z],axis=1)
-    colors=cv2.cvtColor(fl,cv2.COLOR_BGR2RGB)
-    cols=colors[rows,ci]
-    z5,z95=np.percentile(Z,[5,95]); m=(Z>=z5)&(Z<=z95)
-    return pts[m],cols[m]
+    # Nur tatsächlich verwendete Maskenpixel materialisieren.
+    rows, ci = np.nonzero(mask)
+    if len(rows) == 0:
+        return None, None
+
+    d = np.asarray(
+        disp[rows, ci],
+        dtype=np.float32,
+    )
+    valid = d > np.float32(4.0)
+
+    if not np.any(valid):
+        return None, None
+
+    rows = rows[valid]
+    ci = ci[valid]
+    d = d[valid]
+
+    z = np.empty_like(d, dtype=np.float32)
+    np.divide(
+        np.float32(fx * bl),
+        d,
+        out=z,
+    )
+
+    scale = z / np.float32(fx)
+
+    pts = np.empty(
+        (len(d), 3),
+        dtype=np.float32,
+    )
+    pts[:, 0] = (
+        ci.astype(np.float32) - np.float32(cx)
+    ) * scale
+    pts[:, 1] = (
+        rows.astype(np.float32) - np.float32(cy)
+    ) * scale
+    pts[:, 2] = z
+
+    # Nur ausgewählte BGR-Pixel holen und direkt nach RGB drehen.
+    cols = fl[rows, ci, :3][:, ::-1].copy()
+
+    z5, z95 = np.percentile(z, [5, 95])
+    keep = (z >= z5) & (z <= z95)
+
+    return pts[keep], cols[keep]
 
 bg2=bg1=bgov=st2=st1=stov=None
 all_pts=all_cols=None
@@ -1032,28 +1073,131 @@ while True:
     key = cv2.waitKey(1)&0xFF
     if key==ord('q'): break
     if key==ord('b'):
-        print("Hintergrund aufnehmen...")
-        f2s=[]; f1s=[]; fovs=[]
-        for i in range(20):
-            d,_ = get_disp_split(cap2, ml2_1,ml2_2,mr2_1,mr2_2, lm_elp,rm_elp,wls_elp)
-            if d is not None: f2s.append(d)
-            d,_ = get_disp_split(cap1, ml1_1,ml1_2,mr1_1,mr1_2, lm_elp,rm_elp,wls_elp)
-            if d is not None: f1s.append(d)
-            if OV_OK:
-                d,_ = get_disp_dual(capovL,capovR, mlov1,mlov2,mrov1,mrov2, lm_ov,rm_ov,wls_ov)
-                if d is not None: fovs.append(d)
-            if i%5==0: print(f"  {i+1}/20")
-        bg2 = np.median(f2s,axis=0).astype(np.float32)
-        bg1 = np.median(f1s,axis=0).astype(np.float32)
-        st2 = np.std(f2s,axis=0)<3.0
-        st1 = np.std(f1s,axis=0)<3.0
-        if fovs:
-            bgov = np.median(fovs,axis=0).astype(np.float32)
-            stov = np.std(fovs,axis=0)<3.0
+        print("Hintergrund aufnehmen — speichersicher...")
+
+        def _capture_background_model(label, read_disparity, count=20):
+            # Speicherstrategie:
+            # - genau ein vorallokierter float32-Stack pro Kamera
+            # - Stabilität via Welford während der Aufnahme
+            # - Median anschließend in-place auf dem Stack
+            # - Kamera für Kamera statt drei große Stacks gleichzeitig
+            import gc as _gc
+
+            stack = None
+            mean = None
+            m2 = None
+            delta = None
+            delta2 = None
+            valid = 0
+
+            for i in range(count):
+                d = read_disparity()
+
+                if d is not None:
+                    d32 = np.asarray(d, dtype=np.float32)
+
+                    if stack is None:
+                        shape = d32.shape
+                        stack = np.empty(
+                            (count, *shape),
+                            dtype=np.float32
+                        )
+                        mean = np.zeros(shape, dtype=np.float32)
+                        m2 = np.zeros(shape, dtype=np.float32)
+                        delta = np.empty(shape, dtype=np.float32)
+                        delta2 = np.empty(shape, dtype=np.float32)
+
+                    if d32.shape != stack.shape[1:]:
+                        raise RuntimeError(
+                            f"{label}: Disparitätsgröße änderte sich "
+                            f"von {stack.shape[1:]} auf {d32.shape}."
+                        )
+
+                    stack[valid] = d32
+                    valid += 1
+
+                    # Welford-Varianz ohne einen zweiten 20-Frame-Stack.
+                    np.subtract(d32, mean, out=delta)
+                    mean += delta / np.float32(valid)
+                    np.subtract(d32, mean, out=delta2)
+                    m2 += delta * delta2
+
+                if i % 5 == 0:
+                    print(
+                        f"  {label}: {i+1}/{count} "
+                        f"(gültig={valid})"
+                    )
+
+            if stack is None or valid == 0:
+                raise RuntimeError(
+                    f"{label}: kein gültiges Hintergrundframe erhalten."
+                )
+
+            used = stack[:valid]
+
+            # Populations-Standardabweichung wie np.std(..., axis=0).
+            m2 /= np.float32(valid)
+            stable = m2 < np.float32(9.0)  # std < 3.0
+
+            # overwrite_input=True vermeidet einen zweiten großen Stack.
+            background = np.median(
+                used,
+                axis=0,
+                overwrite_input=True,
+            ).astype(
+                np.float32,
+                copy=True,
+            )
+
+            del used, stack, mean, m2, delta, delta2
+            _gc.collect()
+
+            print(
+                f"  {label}: fertig | "
+                f"Frames={valid}/{count} | "
+                f"stabil={stable.mean()*100:.0f}%"
+            )
+
+            return background, stable, valid
+
+        bg2, st2, _n2 = _capture_background_model(
+            "ELP2",
+            lambda: get_disp_split(
+                cap2,
+                ml2_1, ml2_2, mr2_1, mr2_2,
+                lm_elp, rm_elp, wls_elp
+            )[0],
+        )
+
+        bg1, st1, _n1 = _capture_background_model(
+            "ELP1",
+            lambda: get_disp_split(
+                cap1,
+                ml1_1, ml1_2, mr1_1, mr1_2,
+                lm_elp, rm_elp, wls_elp
+            )[0],
+        )
+
+        if OV_OK:
+            bgov, stov, _nov = _capture_background_model(
+                "OV9281",
+                lambda: get_disp_dual(
+                    capovL, capovR,
+                    mlov1, mlov2, mrov1, mrov2,
+                    lm_ov, rm_ov, wls_ov
+                )[0],
+            )
             ov_pct = f" OV:{stov.mean()*100:.0f}%"
         else:
+            bgov = None
+            stov = None
             ov_pct = " OV:n/a"
-        print(f"✓ ELP2:{st2.mean()*100:.0f}% ELP1:{st1.mean()*100:.0f}%{ov_pct} — Person hinstellen → SPACE")
+
+        print(
+            f"✓ ELP2:{st2.mean()*100:.0f}% "
+            f"ELP1:{st1.mean()*100:.0f}%"
+            f"{ov_pct} — Person hinstellen → SPACE"
+        )
 
     if key==ord(' ') and st2 is not None:
         # 5 Sekunden Countdown
@@ -1111,6 +1255,16 @@ while True:
             rawov_right
         )
 
+        # Die sechs Rohbilder und rechten rectifizierten Ansichten
+        # werden nach dem gespeicherten Snapshot nicht mehr benötigt.
+        raw2_left = raw2_right = None
+        raw1_left = raw1_right = None
+        rawov_left = rawov_right = None
+        fr2 = fr1 = frov = None
+
+        import gc as _scan_gc
+        _scan_gc.collect()
+
         # 2D-Personenmasken:
         # Nur sichtbare Körperbereiche werden trianguliert.
         m2 = make_person_mask(fl2, seg2, d2.shape, name="ELP2", min_pixels=800)
@@ -1124,12 +1278,34 @@ while True:
             mov = make_person_mask(flov, segov, dov.shape, name="OV9281", min_pixels=300)
             mov = refine_person_mask_with_depth(mov, dov, bgov, name="OV9281", min_keep=300)
 
-        p2,c2   = disp_to_pts(d2,  fl2,  m2,  fx2,  cx2,  cy2,  bl2)
-        p1,c1   = disp_to_pts(d1,  fl1,  m1,  fx1,  cx1,  cy1,  bl1)
-        if p1 is not None: print(f"ELP1 roh: X={p1[:,0].min()*100:.0f}-{p1[:,0].max()*100:.0f} Y={p1[:,1].min()*100:.0f}-{p1[:,1].max()*100:.0f} Z={p1[:,2].min()*100:.0f}-{p1[:,2].max()*100:.0f}")
+        p2, c2 = disp_to_pts(
+            d2, fl2, m2,
+            fx2, cx2, cy2, bl2
+        )
+        d2 = fl2 = m2 = None
+        _scan_gc.collect()
+
+        p1, c1 = disp_to_pts(
+            d1, fl1, m1,
+            fx1, cx1, cy1, bl1
+        )
+        d1 = fl1 = m1 = None
+        _scan_gc.collect()
+
+        if p1 is not None:
+            print(
+                f"ELP1 roh: "
+                f"X={p1[:,0].min()*100:.0f}-{p1[:,0].max()*100:.0f} "
+                f"Y={p1[:,1].min()*100:.0f}-{p1[:,1].max()*100:.0f} "
+                f"Z={p1[:,2].min()*100:.0f}-{p1[:,2].max()*100:.0f}"
+            )
+
         # Echte Kamerafarben verwenden
         # Debug-Farben deaktiviert
         parts=[]; cparts=[]
+        p1_t = None
+        pov_t = None
+        cov_col = None
         if p2 is not None:
             zmask2 = (p2[:,2] > 0.5) & (p2[:,2] < 4.0)
             xmask2 = (p2[:,0] > -1.5) & (p2[:,0] < 1.5)
@@ -1145,31 +1321,23 @@ while True:
         if p1 is not None:
             # ELP1→ELP2 A/B-Test: Kandidat D
             # R transponiert, kein X-Flip, Translation unverändert.
-            p1_t = (
-                R_rel_elp1.T @ p1.T
-            ).T + np.asarray(T_rel_elp1).reshape(1, 3)
+            _R_elp1_t = np.asarray(
+                R_rel_elp1.T,
+                dtype=np.float32,
+            )
+            _T_elp1 = np.asarray(
+                T_rel_elp1,
+                dtype=np.float32,
+            ).reshape(1, 3)
+
+            p1_t = (_R_elp1_t @ p1.T).T
+            p1_t += _T_elp1
 
             print("ELP1 Transformation aktiv: Kandidat D = R.T + kein Flip + T")
-            # ELP1_TRANSFORM_DIAGNOSIS
-            # Rein diagnostisch: p1_t bleibt die tatsächlich verwendete Variante.
-            _T1 = np.asarray(T_rel_elp1, dtype=float).reshape(1, 3)
-            _p1_flipx = p1.copy()
-            _p1_flipx[:, 0] *= -1.0
 
-            _elp1_candidates = {
-                "A aktuell": p1_t,
-                "B R + kein Flip + T":
-                    (R_rel_elp1 @ p1.T).T + _T1,
-                "C R.T + flipX + T":
-                    (R_rel_elp1.T @ _p1_flipx.T).T + _T1,
-                "D R.T + kein Flip + T":
-                    (R_rel_elp1.T @ p1.T).T + _T1,
-                "E invers R.T*(p-T)":
-                    (R_rel_elp1.T @ (p1 - _T1).T).T,
-                "F invers R.T*(flipX(p)-T)":
-                    (R_rel_elp1.T @ (_p1_flipx - _T1).T).T,
-            }
-
+            # Kandidat D ist bestätigt. Die früheren A-F-Hypothesen
+            # erzeugten mehrere vollständige Diagnosekopien und werden
+            # im produktiven Scan nicht mehr materialisiert.
             if p2 is not None and len(p2) > 0:
                 _p2_median = np.median(p2, axis=0)
                 print(
@@ -1183,41 +1351,46 @@ while True:
                     f"{p2[:,2].max()*100:.0f}cm"
                 )
 
-            print("ELP1 Transform-Hypothesen:")
-            for _name, _points in _elp1_candidates.items():
-                _median = np.median(_points, axis=0)
-                print(
-                    f"  {_name}: "
-                    f"Mitte X={_median[0]*100:.1f}cm "
-                    f"Y={_median[1]*100:.1f}cm "
-                    f"Z={_median[2]*100:.1f}cm | "
-                    f"X={_points[:,0].min()*100:.0f} bis "
-                    f"{_points[:,0].max()*100:.0f}cm | "
-                    f"Z={_points[:,2].min()*100:.0f} bis "
-                    f"{_points[:,2].max()*100:.0f}cm"
-                )
-
             # Z-Clipping: nur Punkte 0.5–4m vor ELP2 Ursprung
             zmask1 = (p1_t[:,2] > 0.5) & (p1_t[:,2] < 4.0)
             xmask1 = (p1_t[:,0] > -1.5) & (p1_t[:,0] < 1.5)
             mask1 = zmask1 & xmask1
             print(f"ELP1 transformiert: X={p1_t[:,0].min()*100:.0f}-{p1_t[:,0].max()*100:.0f} Y={p1_t[:,1].min()*100:.0f}-{p1_t[:,1].max()*100:.0f} Z={p1_t[:,2].min()*100:.0f}-{p1_t[:,2].max()*100:.0f}")
-            p1_t = p1_t[mask1]; c1 = c1[mask1]
+            p1_t = p1_t[mask1]
+            c1 = c1[mask1]
+
+            _p1_raw_count = len(p1)
+            p1 = None
+            _scan_gc.collect()
             _save_scan_files(
                 p1_t,
                 c1,
                 suffix="_ELP1_transformiert"
             )
             parts.append(p1_t); cparts.append(c1)
-            print(f"ELP1: {len(p1)} → {len(p1_t)} nach Clipping")
+            print(
+                f"ELP1: {_p1_raw_count} → {len(p1_t)} nach Clipping"
+            )
         if OV_OK and mov is not None and stov is not None:
-            pov,cov_col = disp_to_pts(dov, flov, mov, fxov, cxov, cyov, blov)
+            pov, cov_col = disp_to_pts(
+                dov, flov, mov,
+                fxov, cxov, cyov, blov
+            )
+            dov = flov = mov = None
+            _scan_gc.collect()
+
             if pov is not None:
                 print(f"OV9281 Z-Bereich: {pov[:,2].min()*100:.0f}–{pov[:,2].max()*100:.0f}cm")
                 print(f"OV9281 X-Bereich: {pov[:,0].min()*100:.0f}–{pov[:,0].max()*100:.0f}cm")
                 # OV9281-Punkte kommen aus dem rektifizierten Stereo-Koordinatensystem.
                 # Für die ArUco-Transformation müssen sie zurück in das Rohkamera-Koordinatensystem.
-                pov_raw = (R1_ov.T @ pov.T).T
+                _R1_ov_t = np.asarray(
+                    R1_ov.T,
+                    dtype=np.float32,
+                )
+                pov_raw = (_R1_ov_t @ pov.T).T
+                pov = None
+                _scan_gc.collect()
                 print(
                     f"OV9281 nach Unrectify: "
                     f"X={pov_raw[:,0].min()*100:.0f} bis {pov_raw[:,0].max()*100:.0f}cm "
@@ -1228,10 +1401,27 @@ while True:
                 # OV9281 in ELP2-Weltkoordinaten transformieren
                 # OV9281 feste Transformation nach erfolgreichem Test
                 # Gefundene passende Variante: R.T*flip(-1,1,-1)+T
-                Tov = T_rel_ov.reshape(1, 3)
-                flip_ov = np.array([-1.0, 1.0, -1.0], dtype=float).reshape(1, 3)
-                pf = pov_raw * flip_ov
-                pov_t = (R_rel_ov.T @ pf.T).T + Tov
+                Tov = np.asarray(
+                    T_rel_ov,
+                    dtype=np.float32,
+                ).reshape(1, 3)
+                flip_ov = np.array(
+                    [-1.0, 1.0, -1.0],
+                    dtype=np.float32,
+                ).reshape(1, 3)
+
+                # Flip direkt in der vorhandenen Wolke.
+                pov_raw *= flip_ov
+
+                _Rrel_ov_t = np.asarray(
+                    R_rel_ov.T,
+                    dtype=np.float32,
+                )
+                pov_t = (_Rrel_ov_t @ pov_raw.T).T
+                pov_t += Tov
+
+                pov_raw = None
+                _scan_gc.collect()
 
                 ov_mask = (
                     (pov_t[:,0] > -1.60) & (pov_t[:,0] < 1.60) &
@@ -1262,19 +1452,39 @@ while True:
                 else:
                     print(f"OV9281: {before_ov} zu {len(pov_t)} nach Clipping, zu wenig Punkte, nicht hinzugefügt")
         if parts:
-            all_pts = np.vstack(parts); all_cols = np.vstack(cparts)
+            all_pts = np.vstack(parts)
+            all_cols = np.vstack(cparts)
+
+            parts.clear()
+            cparts.clear()
+            _scan_gc.collect()
+
             print(f"Gesamt: {len(all_pts)}")
             print(f"Breite:{(all_pts[:,0].max()-all_pts[:,0].min())*100:.0f}cm Höhe:{(all_pts[:,1].max()-all_pts[:,1].min())*100:.0f}cm")
             # Pro-Kamera Diagnose
             if p2 is not None and len(p2)>0: print(f"  ELP2  X:{p2[:,0].min()*100:.0f}–{p2[:,0].max()*100:.0f}cm  Z:{p2[:,2].min()*100:.0f}–{p2[:,2].max()*100:.0f}cm")
-            if p1 is not None and len(p1_t)>0: print(f"  ELP1  X:{p1_t[:,0].min()*100:.0f}–{p1_t[:,0].max()*100:.0f}cm  Z:{p1_t[:,2].min()*100:.0f}–{p1_t[:,2].max()*100:.0f}cm")
+            if p1_t is not None and len(p1_t) > 0:
+                print(
+                    f"  ELP1  X:{p1_t[:,0].min()*100:.0f}–"
+                    f"{p1_t[:,0].max()*100:.0f}cm  "
+                    f"Z:{p1_t[:,2].min()*100:.0f}–"
+                    f"{p1_t[:,2].max()*100:.0f}cm"
+                )
+
+            p2 = c2 = p1_t = c1 = None
+            pov_t = cov_col = None
+            _scan_gc.collect()
             break
 
 cap2.release(); cap1.release(); capovL.release(); capovR.release()
 cv2.destroyAllWindows()
 
 if all_pts is not None:
-    pts=all_pts.copy(); cols=all_cols.copy()
+    # Besitz direkt übernehmen; keine zweite vollständige Wolkenkopie.
+    pts = all_pts
+    cols = all_cols
+    all_pts = None
+    all_cols = None
 
 
     # PCA vorerst deaktiviert, weil sie vor Korridor und Hintergrundentfernung die Weltkoordinaten zerstört

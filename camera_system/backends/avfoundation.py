@@ -271,10 +271,21 @@ def _nsdata_to_bytes(data: Any) -> bytes:
 
 def _pixel_buffer_to_bgr_via_coreimage(
     pixel_buffer: Any,
+    ci_context: Any | None = None,
+    render_buffer: bytearray | None = None,
+    color_space: Any | None = None,
 ) -> np.ndarray:
-    # Kompatibilitäts-Fallback:
-    # CVPixelBuffer -> CIImage -> CGImage -> PNG im Speicher
-    # -> cv2.imdecode(BGR).
+    # CVPixelBuffer -> CIImage -> direkter BGRA8-Render -> NumPy BGR.
+    # Kein CGImage, kein NSBitmapImageRep, kein PNG, kein cv2.imdecode.
+    # Der große BGRA-Arbeitspuffer kann wiederverwendet werden.
+    width = int(Quartz.CVPixelBufferGetWidth(pixel_buffer))
+    height = int(Quartz.CVPixelBufferGetHeight(pixel_buffer))
+
+    if width <= 0 or height <= 0:
+        raise RuntimeError(
+            f"Ungültige Pixelbuffer-Größe: {width}x{height}"
+        )
+
     ci_image = Quartz.CIImage.imageWithCVPixelBuffer_(
         pixel_buffer
     )
@@ -283,61 +294,63 @@ def _pixel_buffer_to_bgr_via_coreimage(
             "CIImage konnte nicht aus CVPixelBuffer erzeugt werden."
         )
 
-    context = Quartz.CIContext.contextWithOptions_(None)
-    cg_image = context.createCGImage_fromRect_(
+    context = ci_context
+    if context is None:
+        context = Quartz.CIContext.contextWithOptions_(None)
+
+    rgb_space = color_space
+    if rgb_space is None:
+        rgb_space = Quartz.CGColorSpaceCreateDeviceRGB()
+
+    row_bytes = width * 4
+    byte_count = row_bytes * height
+
+    bitmap = render_buffer
+    if bitmap is None:
+        bitmap = bytearray(byte_count)
+
+    if len(bitmap) != byte_count:
+        raise RuntimeError(
+            "CoreImage-Arbeitspuffer hat falsche Größe: "
+            f"{len(bitmap)} statt {byte_count} Bytes."
+        )
+
+    bounds = Quartz.CGRectMake(
+        0.0,
+        0.0,
+        float(width),
+        float(height),
+    )
+
+    context.render_toBitmap_rowBytes_bounds_format_colorSpace_(
         ci_image,
-        ci_image.extent(),
+        bitmap,
+        row_bytes,
+        bounds,
+        Quartz.kCIFormatBGRA8,
+        rgb_space,
     )
-    if cg_image is None:
-        raise RuntimeError(
-            "CGImage konnte nicht aus CIImage erzeugt werden."
-        )
 
-    rep = AppKit.NSBitmapImageRep.alloc().initWithCGImage_(
-        cg_image
-    )
-    if rep is None:
-        raise RuntimeError(
-            "NSBitmapImageRep konnte nicht erzeugt werden."
-        )
-
-    png_type = getattr(
-        AppKit,
-        "NSBitmapImageFileTypePNG",
-        getattr(AppKit, "NSPNGFileType", None),
-    )
-    if png_type is None:
-        raise RuntimeError(
-            "PNG-Dateityp in AppKit nicht gefunden."
-        )
-
-    png_data = rep.representationUsingType_properties_(
-        png_type,
-        {},
-    )
-    if png_data is None:
-        raise RuntimeError(
-            "PNG-Konvertierung des Frames fehlgeschlagen."
-        )
-
-    encoded = np.frombuffer(
-        _nsdata_to_bytes(png_data),
+    bgra = np.frombuffer(
+        bitmap,
         dtype=np.uint8,
+        count=byte_count,
+    ).reshape(
+        height,
+        width,
+        4,
     )
-    frame = cv2.imdecode(
-        encoded,
-        cv2.IMREAD_COLOR,
-    )
 
-    if frame is None:
-        raise RuntimeError(
-            "OpenCV konnte das In-Memory-PNG nicht dekodieren."
-        )
-
-    return frame
+    # Eigene BGR-Kopie, weil bitmap beim nächsten Frame wiederverwendet wird.
+    return bgra[:, :, :3].copy()
 
 
-def _pixel_buffer_to_bgr(pixel_buffer: Any) -> np.ndarray:
+def _pixel_buffer_to_bgr(
+    pixel_buffer: Any,
+    ci_context: Any | None = None,
+    render_buffer: bytearray | None = None,
+    color_space: Any | None = None,
+) -> np.ndarray:
     width = int(Quartz.CVPixelBufferGetWidth(pixel_buffer))
     height = int(Quartz.CVPixelBufferGetHeight(pixel_buffer))
     bytes_per_row = int(
@@ -408,7 +421,10 @@ def _pixel_buffer_to_bgr(pixel_buffer: Any) -> np.ndarray:
         )
 
     return _pixel_buffer_to_bgr_via_coreimage(
-        pixel_buffer
+        pixel_buffer,
+        ci_context,
+        render_buffer,
+        color_space,
     )
 
 
@@ -469,6 +485,19 @@ class AVFoundationCapture:
         self._latest_sequence = 0
         self._last_returned_sequence = 0
         self._last_error: str | None = None
+
+        # AVFoundation liefert mit Geräte-FPS. Die teure
+        # CVPixelBuffer->BGR-Konvertierung erfolgt aber nur,
+        # wenn read() tatsächlich ein neues Frame benötigt.
+        self._frame_requested = False
+        self._conversion_in_progress = False
+
+        # CoreImage-Ressourcen pro Capture-Instanz wiederverwenden.
+        self._ci_context = Quartz.CIContext.contextWithOptions_(None)
+        self._ci_color_space = Quartz.CGColorSpaceCreateDeviceRGB()
+        self._ci_render_buffer = bytearray(
+            self.width * self.height * 4
+        )
 
         self._device: Any = None
         self._session: Any = None
@@ -674,44 +703,79 @@ class AVFoundationCapture:
             self._latest_sequence = 0
             self._last_returned_sequence = 0
             self._last_error = None
+            self._frame_requested = False
+            self._conversion_in_progress = False
             self._is_open = True
             self._condition.notify_all()
 
     def _handle_sample_buffer(self, sample_buffer: Any) -> None:
-        pixel_buffer = CoreMedia.CMSampleBufferGetImageBuffer(
-            sample_buffer
-        )
-        if pixel_buffer is None:
-            raise RuntimeError(
-                "CMSampleBuffer enthält keinen CVPixelBuffer."
-            )
-
-        frame = _pixel_buffer_to_bgr(pixel_buffer)
-
-        actual_height, actual_width = frame.shape[:2]
-        if (
-            actual_width != self.width
-            or actual_height != self.height
-        ):
-            raise RuntimeError(
-                "Falsche Framegröße: erwartet "
-                f"{self.width}x{self.height}, erhalten "
-                f"{actual_width}x{actual_height}."
-            )
-
+        # Nur ein von read() angefordertes Frame wird konvertiert.
+        # Alle anderen AVFoundation-Callbacks werden vor CoreImage,
+        # PNG und OpenCV sofort verworfen.
         with self._condition:
             if not self._is_open:
-                # startRunning() kann bereits Frames liefern,
-                # bevor open() die Session als offen markiert.
-                # Diese ersten Frames dürfen trotzdem gepuffert
-                # werden; daher wird nur bei bereits freigegebener
-                # Session verworfen.
-                if self._session is None:
-                    pass
+                return
+
+            if (
+                not self._frame_requested
+                or self._conversion_in_progress
+            ):
+                return
+
+            self._conversion_in_progress = True
+
+        try:
+            # Der Callback läuft auf einer eigenen libdispatch-Queue.
+            # Ohne expliziten Autorelease-Pool können temporäre
+            # Objective-C-Objekte aus CoreImage/AppKit über viele
+            # Frames hinweg im Thread hängen bleiben.
+            with objc.autorelease_pool():
+                pixel_buffer = CoreMedia.CMSampleBufferGetImageBuffer(
+                    sample_buffer
+                )
+
+                if pixel_buffer is None:
+                    raise RuntimeError(
+                        "CMSampleBuffer enthält keinen CVPixelBuffer."
+                    )
+
+                frame = _pixel_buffer_to_bgr(
+                    pixel_buffer,
+                    self._ci_context,
+                    self._ci_render_buffer,
+                    self._ci_color_space,
+                )
+
+                actual_height, actual_width = frame.shape[:2]
+                if (
+                    actual_width != self.width
+                    or actual_height != self.height
+                ):
+                    raise RuntimeError(
+                        "Falsche Framegröße: erwartet "
+                        f"{self.width}x{self.height}, erhalten "
+                        f"{actual_width}x{actual_height}."
+                    )
+
+        except Exception:
+            with self._condition:
+                self._conversion_in_progress = False
+                self._frame_requested = False
+                self._condition.notify_all()
+            raise
+
+        with self._condition:
+            self._conversion_in_progress = False
+
+            if not self._is_open:
+                self._frame_requested = False
+                self._condition.notify_all()
+                return
 
             self._latest_frame = frame
             self._latest_sequence += 1
             self._last_error = None
+            self._frame_requested = False
             self._condition.notify_all()
 
     def _publish_callback_error(self, exc: Exception) -> None:
@@ -719,6 +783,8 @@ class AVFoundationCapture:
             self._last_error = (
                 f"{type(exc).__name__}: {exc}"
             )
+            self._conversion_in_progress = False
+            self._frame_requested = False
             self._condition.notify_all()
 
     def read(
@@ -738,14 +804,22 @@ class AVFoundationCapture:
             if not self._is_open:
                 return False, None
 
+            if (
+                self._latest_sequence
+                <= self._last_returned_sequence
+            ):
+                self._frame_requested = True
+
             while (
                 self._latest_sequence
                 <= self._last_returned_sequence
             ):
                 if self._last_error is not None:
+                    self._frame_requested = False
                     return False, None
 
                 if timeout == 0:
+                    self._frame_requested = False
                     return False, None
 
                 remaining = (
@@ -758,23 +832,24 @@ class AVFoundationCapture:
                     remaining is not None
                     and remaining <= 0
                 ):
+                    self._frame_requested = False
                     return False, None
 
                 self._condition.wait(remaining)
 
                 if not self._is_open:
+                    self._frame_requested = False
                     return False, None
 
             frame = self._latest_frame
             if frame is None:
+                self._frame_requested = False
                 return False, None
 
             self._last_returned_sequence = (
                 self._latest_sequence
             )
 
-            # Das gespeicherte Frame wird nie nachträglich verändert.
-            # Der Aufrufer bekommt deshalb das aktuelle ndarray direkt.
             return True, frame
 
     def release(self) -> None:
@@ -786,6 +861,8 @@ class AVFoundationCapture:
             device_lock_held = self._device_lock_held
 
             self._is_open = False
+            self._frame_requested = False
+            self._conversion_in_progress = False
             self._condition.notify_all()
 
         if output is not None:
@@ -828,6 +905,8 @@ class AVFoundationCapture:
             self._latest_frame = None
             self._latest_sequence = 0
             self._last_returned_sequence = 0
+            self._frame_requested = False
+            self._conversion_in_progress = False
             self._condition.notify_all()
 
     def __enter__(self) -> "AVFoundationCapture":
