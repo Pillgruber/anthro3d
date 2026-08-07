@@ -235,7 +235,7 @@ class ArucoMonitor:
             "ELP1_to_ELP2": {
                 "target": "ELP2",
                 "source": "ELP1",
-                "marker": 2,
+                "markers": (2, 20),
                 "required": True,
                 "R_file": "R_rel_elp1_to_elp2.npy",
                 "T_file": "T_rel_elp1_to_elp2.npy",
@@ -246,7 +246,7 @@ class ArucoMonitor:
             rules["OV9281_to_ELP2"] = {
                 "target": "ELP2",
                 "source": "OV9281",
-                "marker": 3,
+                "markers": (3, 30),
                 "required": self.require_ov,
                 "R_file": "R_rel_ov9281_to_elp2.npy",
                 "T_file": "T_rel_ov9281_to_elp2.npy",
@@ -259,7 +259,7 @@ class ArucoMonitor:
                 # Phase 2A nutzt zunächst den Primärmarker ID4.
                 # ID40 wird in Phase 2B als redundanter zweiter
                 # Geometrieanker ergänzt.
-                "marker": 4,
+                "markers": (4, 40),
                 "required": False,
                 "R_file": "R_rel_ov9281_to_elp1.npy",
                 "T_file": "T_rel_ov9281_to_elp1.npy",
@@ -462,37 +462,163 @@ class ArucoMonitor:
             for pair_name, rule in self.pair_rules.items():
                 target = rule["target"]
                 source = rule["source"]
-                marker = rule["marker"]
+
+                markers = tuple(
+                    rule.get(
+                        "markers",
+                        (rule.get("marker"),),
+                    )
+                )
+                markers = tuple(
+                    int(marker)
+                    for marker in markers
+                    if marker is not None
+                )
 
                 if target not in detections or source not in detections:
                     continue
 
-                target_obs_list = detections.get(target, {}).get(marker, [])
-                source_obs_list = detections.get(source, {}).get(marker, [])
+                marker_candidates = []
 
-                if not target_obs_list or not source_obs_list:
+                # Jeder gemeinsam sichtbare Marker liefert zunächst
+                # unabhängig eine relative Kameratransformation.
+                for marker in markers:
+                    target_obs_list = (
+                        detections
+                        .get(target, {})
+                        .get(marker, [])
+                    )
+                    source_obs_list = (
+                        detections
+                        .get(source, {})
+                        .get(marker, [])
+                    )
+
+                    if not target_obs_list or not source_obs_list:
+                        continue
+
+                    best_marker = None
+
+                    for target_obs in target_obs_list:
+                        for source_obs in source_obs_list:
+                            R_rel, T_rel, score = (
+                                self._relative_from_common_marker(
+                                    target_obs,
+                                    source_obs,
+                                )
+                            )
+
+                            candidate = {
+                                "time": now,
+                                "R": R_rel,
+                                "T": T_rel,
+                                "score": float(score),
+                                "marker": int(marker),
+                                "target_side": target_obs["side"],
+                                "source_side": source_obs["side"],
+                            }
+
+                            if (
+                                best_marker is None
+                                or candidate["score"]
+                                < best_marker["score"]
+                            ):
+                                best_marker = candidate
+
+                    if best_marker is not None:
+                        marker_candidates.append(best_marker)
+
+                if not marker_candidates:
                     continue
 
-                best = None
+                # Nur ein Marker sichtbar:
+                # weiterhin verwendbar, aber ohne Redundanz.
+                if len(marker_candidates) == 1:
+                    fused = dict(marker_candidates[0])
 
-                for target_obs in target_obs_list:
-                    for source_obs in source_obs_list:
-                        R_rel, T_rel, score = self._relative_from_common_marker(target_obs, source_obs)
-                        candidate = {
-                            "time": now,
-                            "R": R_rel,
-                            "T": T_rel,
-                            "score": float(score),
-                            "marker": marker,
-                            "target_side": target_obs["side"],
-                            "source_side": source_obs["side"],
-                        }
+                    fused["markers_used"] = (
+                        int(marker_candidates[0]["marker"]),
+                    )
+                    fused["marker_translation_spread_cm"] = 0.0
+                    fused["marker_rotation_spread_deg"] = 0.0
 
-                        if best is None or candidate["score"] < best["score"]:
-                            best = candidate
+                else:
+                    # Zwei Marker desselben Stativs liefern zwei
+                    # voneinander unabhängige Schätzungen derselben
+                    # Kameratransformation.
+                    R_arr = np.array(
+                        [c["R"] for c in marker_candidates],
+                        dtype=np.float64,
+                    )
+                    T_arr = np.array(
+                        [c["T"] for c in marker_candidates],
+                        dtype=np.float64,
+                    )
 
-                if best is not None:
-                    self.buffers[pair_name].append(best)
+                    R_fused = self._average_rotations(R_arr)
+                    T_fused = np.median(T_arr, axis=0)
+
+                    max_t_spread_cm = 0.0
+                    max_r_spread_deg = 0.0
+
+                    for i in range(len(marker_candidates)):
+                        for j in range(i + 1, len(marker_candidates)):
+                            t_spread_cm = float(
+                                np.linalg.norm(
+                                    marker_candidates[i]["T"]
+                                    - marker_candidates[j]["T"]
+                                )
+                                * 100.0
+                            )
+
+                            r_spread_deg = self._rotation_diff_deg(
+                                marker_candidates[i]["R"],
+                                marker_candidates[j]["R"],
+                            )
+
+                            max_t_spread_cm = max(
+                                max_t_spread_cm,
+                                t_spread_cm,
+                            )
+                            max_r_spread_deg = max(
+                                max_r_spread_deg,
+                                r_spread_deg,
+                            )
+
+                    fused = {
+                        "time": now,
+                        "R": R_fused,
+                        "T": T_fused,
+                        "score": float(
+                            np.median(
+                                [
+                                    c["score"]
+                                    for c in marker_candidates
+                                ]
+                            )
+                        ),
+                        "marker": None,
+                        "markers_used": tuple(
+                            int(c["marker"])
+                            for c in marker_candidates
+                        ),
+                        "target_side": "+".join(
+                            c["target_side"]
+                            for c in marker_candidates
+                        ),
+                        "source_side": "+".join(
+                            c["source_side"]
+                            for c in marker_candidates
+                        ),
+                        "marker_translation_spread_cm": (
+                            max_t_spread_cm
+                        ),
+                        "marker_rotation_spread_deg": (
+                            max_r_spread_deg
+                        ),
+                    }
+
+                self.buffers[pair_name].append(fused)
 
             self._prune_buffers(now)
 
