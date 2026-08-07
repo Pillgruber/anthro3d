@@ -1,0 +1,109 @@
+schema_version: 1
+created_utc: '2026-08-07T09:45:52.207269+00:00'
+duration_seconds: 30.0
+observers:
+  ELP1:
+    ELP2_STAND:
+      marker_ids:
+      - 4
+      - 40
+      samples: 154
+      offset_local_cm_median:
+      - -0.28847002393057536
+      - -34.690795382724424
+      - 0.9902043059289133
+      offset_local_cm_mad:
+      - 0.12278511844862637
+      - 0.07904110872480885
+      - 0.3293707401852765
+      distance_cm_median: 34.717183495915386
+      distance_cm_mad: 0.0814210047198074
+      rotation_deg_median: 2.1203779402886145
+      rotation_deg_mad: 0.41143785651087106
+    OV9281_STAND:
+      marker_ids:
+      - 2
+      - 20
+      samples: 154
+      offset_local_cm_median:
+      - -0.30770833629154637
+      - -34.321614209505846
+      - 3.755368917341841
+      offset_local_cm_mad:
+      - 0.06668536377711554
+      - 0.2610226738368979
+      - 0.6284721746723352
+      distance_cm_median: 34.53328209532544
+      distance_cm_mad: 0.1832505016273842
+      rotation_deg_median: 2.238028844659665
+      rotation_deg_mad: 0.5475497988574463
+  ELP2:
+    ELP1_STAND:
+      marker_ids:
+      - 3
+      - 30
+      samples: 154
+      offset_local_cm_median:
+      - -0.2958969968068694
+      - -36.018021411705284
+      - -0.9378117952706546
+      offset_local_cm_mad:
+      - 0.5518026908101056
+      - 0.1708572753845985
+      - 0.754074804275541
+      distance_cm_median: 36.04563939579154
+      distance_cm_mad: 0.19974760734854158
+      rotation_deg_median: 1.3197322212172642
+      rotation_deg_mad: 0.6765501562597667
+    OV9281_STAND:
+      marker_ids:
+      - 2
+      - 20
+      samples: 154
+      offset_local_cm_median:
+      - 0.6252140829618875
+      - -35.79262775853616
+      - -0.31055796852622
+      offset_local_cm_mad:
+      - 0.5349443506776452
+      - 0.2634401091336329
+      - 0.3903580504115366
+      distance_cm_median: 35.793607769598026
+      distance_cm_mad: 0.2979688731052015
+      rotation_deg_median: 2.568044311692264
+      rotation_deg_mad: 0.3497789194148062
+  OV9281:
+    ELP1_STAND:
+      marker_ids:
+      - 3
+      - 30
+      samples: 153
+      offset_local_cm_median:
+      - -1.0619821980739739
+      - -34.49275729943354
+      - 1.6094124174849092
+      offset_local_cm_mad:
+      - 0.3852432656685446
+      - 0.13270104227215285
+      - 0.715208700227083
+      distance_cm_median: 34.571989188303995
+      distance_cm_mad: 0.09273788104110992
+      rotation_deg_median: 1.553738410833765
+      rotation_deg_mad: 0.4256982888285723
+    ELP2_STAND:
+      marker_ids:
+      - 4
+      - 40
+      samples: 153
+      offset_local_cm_median:
+      - -0.170986565551079
+      - -35.13363330827186
+      - -0.15590699148130147
+      offset_local_cm_mad:
+      - 0.3348291761895544
+      - 0.12502582618530056
+      - 0.4710344124350322
+      distance_cm_median: 35.13535389244344
+      distance_cm_mad: 0.12947405456843342
+      rotation_deg_median: 1.1972630275509561
+      rotation_deg_mad: 0.35395645346362437
