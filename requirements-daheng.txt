@@ -1,0 +1,2 @@
+# gxipy comes from the installed Galaxy SDK, not PyPI.
+numpy==1.26.4
