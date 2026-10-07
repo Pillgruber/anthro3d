@@ -1,0 +1,4 @@
+# Keep NumPy compatible with the installed Galaxy SDK.
+-r requirements-daheng.txt
+# Install one OpenCV variant; contrib also provides the project's ArUco modules.
+opencv-contrib-python==4.10.0.84
