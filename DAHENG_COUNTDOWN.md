@@ -4,6 +4,12 @@
 
 Galaxy Viewer schließen, beide Daheng-Kameras anschließen. PowerShell im Projektordner öffnen:
 
+Vor dem ersten Hardwaretest können die Tests der Helligkeitslogik ausgeführt werden:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest -q test_daheng_auto_brightness
+```
+
 ```powershell
 git switch feature/daheng-camera
 git pull --ff-only
