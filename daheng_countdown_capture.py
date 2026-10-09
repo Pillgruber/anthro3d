@@ -534,7 +534,13 @@ def main():
     if result['passed']:
         print(f'Aufnahme erfolgreich: 2 Bilder und Protokoll in {run}')
     elif not cancelled:
-        detail = errors[0] if errors else 'Nicht alle Kameras konnten gueltige Bilder liefern.'
+        # Show one concise cause, not every transient or SDK diagnostic.
+        worker_failures = [
+            item for serial in args.serials
+            for item in reports.get(serial, {}).get('errors', [])
+        ]
+        detail = (worker_failures[0] if worker_failures else
+                  (errors[0] if errors else 'Keine gueltige Doppelaufnahme moeglich.'))
         print(f'Messung nicht moeglich: {detail}')
         print(f'Diagnoseprotokoll: {run / (run_id + "_capture.json")}')
     return 0 if result['passed'] or cancelled else 1
