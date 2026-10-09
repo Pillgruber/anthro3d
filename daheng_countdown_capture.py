@@ -20,6 +20,9 @@ import sys
 import time
 
 from daheng_live_preview import make_panel, new_slot, render_window
+from daheng_auto_brightness import (
+    AutoBrightness, brightness_metric, evaluate_pair,
+)
 
 
 def utc_now():
@@ -49,8 +52,8 @@ def optional_float(control, name):
         return None
 
 
-def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
-                  capture_at, stop, messages, run_path):
+def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
+                  capture_gate, capture_at, stop, messages, run_path):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     camera = None
     streaming = False
@@ -61,6 +64,10 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
     previous_id = None
     next_preview = 0.0
     snapshot = None
+    brightness = None
+    locked = False
+    lock_announced = False
+    last_quality = None
     try:
         import numpy as np
         import cv2 as cv
@@ -94,6 +101,9 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
             if old_value != value:
                 restore.append((feature, old_value))
                 feature.set(value)
+        # Every camera uses the SAME brightness target; exposure/gain may differ.
+        brightness = AutoBrightness(control)
+        report['auto_brightness'] = True
         messages.put({'kind': 'ready', 'serial': serial, 'report': dict(report)})
         if not start_gate.wait(options['setup_timeout_s'] + 5):
             raise RuntimeError('Timed out waiting for software start')
@@ -127,9 +137,19 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
                     report['missing_frame_ids'] += max(0, frame_id - previous_id - 1)
                 previous_id = frame_id
                 report['valid_frames'] += 1
+                if locked and not freeze_gate.is_set():
+                    locked = False
+                    lock_announced = False
+                    brightness.last_update = 0.0  # Resume adjusting after failed lock
+                if not locked and freeze_gate.is_set():
+                    locked = True
                 need_capture = capture_gate.is_set() and received >= capture_at.value
                 need_preview = received >= next_preview
-                if need_capture or need_preview:
+                need_quality = (
+                    (not locked and brightness.should_sample(received))
+                    or (locked and not lock_announced)
+                )
+                if need_capture or need_preview or need_quality:
                     array = image.get_numpy_array()
                     if array is None:
                         raise RuntimeError('SDK returned no pixel array')
@@ -137,7 +157,32 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
                     expect_dtype = np.uint8 if fmt.lower() == 'mono8' else np.uint16
                     if array.shape != (report['height'], report['width']) or array.dtype != expect_dtype:
                         raise RuntimeError(f'Unexpected frame shape/dtype: {array.shape}, {array.dtype}')
+                    if need_quality:
+                        last_quality = brightness_metric(array, fmt, np)
+                        if locked:
+                            # A post-freeze image and the frozen camera settings.
+                            messages.put({
+                                'kind': 'locked', 'serial': serial,
+                                'report': {
+                                    'metric': last_quality,
+                                    'host_perf_s': received,
+                                    'settings': brightness.state(),
+                                },
+                            })
+                            lock_announced = True
+                        else:
+                            brightness.update(last_quality, received)
+                            messages.put({
+                                'kind': 'brightness', 'serial': serial,
+                                'report': {
+                                    'metric': last_quality,
+                                    'host_perf_s': received,
+                                    'last_change_perf_s': brightness.last_change,
+                                },
+                            })
                     if need_capture:
+                        if not locked or not lock_announced:
+                            raise RuntimeError('Image capture requested before camera settings locked')
                         # Copy before returning SDK-owned frame; 16-bit data stay 16-bit.
                         owned = array.copy()
                         frame_info = {
@@ -148,9 +193,11 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
                             'host_received_utc': received_utc,
                             'width': report['width'], 'height': report['height'],
                             'pixel_format': fmt, 'dtype': str(owned.dtype),
-                            'exposure_time_us': report['exposure_time_us'],
-                            'gain': report['gain'],
+                            'exposure_time_us': brightness.state()['exposure_time_us'],
+                            'gain': brightness.state()['gain_db'],
                             'configured_fps': report['configured_fps'],
+                            'auto_brightness': brightness.state(),
+                            'brightness_metric_8bit': last_quality,
                         }
                     if need_preview:
                         preview = make_panel(array, fmt, options['panel_width'],
@@ -187,11 +234,14 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
                     camera.stream_off()
                 except Exception as exc:
                     errors.append(f'Stopping acquisition failed: {exc}')
+            if brightness is not None:
+                errors.extend(f'Restoring auto brightness setting failed: {error}'
+                              for error in brightness.restore_settings())
             for feature, previous in reversed(restore):
                 try:
                     feature.set(previous)
                 except Exception as exc:
-                    errors.append(f'Restoring {feature} failed: {exc}')
+                    errors.append(f'Restoring acquisition setting failed: {exc}')
             try:
                 camera.close_device()
             except Exception as exc:
@@ -199,6 +249,7 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
         if report['frame_id_anomaly_count']:
             errors.append('Frame-ID gaps, duplicates, or reversed IDs seen during run')
         report.update(saved=snapshot is not None, snapshot=snapshot, errors=errors,
+                      auto_brightness_adjustments=brightness.changes if brightness else None,
                       passed=snapshot is not None and not errors)
         if errors:
             stop.set()
@@ -208,7 +259,9 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serials', nargs=2, required=True)
-    parser.add_argument('--countdown-seconds', type=int, default=5)
+    parser.add_argument('--countdown-seconds', type=int, default=3)
+    parser.add_argument('--quality-timeout-s', type=float, default=18,
+                        help='Maximum time to complete brightness matching after countdown')
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Flat output folder (default: Desktop/AnthroPrecis-Aufnahmen)')
     parser.add_argument('--auto', action='store_true',
@@ -234,7 +287,8 @@ def main():
     if not 1 <= args.timeout_ms <= 10000:
         parser.error('Timeout must be 1..10000 ms')
     if not (math.isfinite(args.setup_timeout_s) and args.setup_timeout_s > 0 and
-            math.isfinite(args.capture_timeout_s) and args.capture_timeout_s > 0):
+            math.isfinite(args.capture_timeout_s) and args.capture_timeout_s > 0 and
+            math.isfinite(args.quality_timeout_s) and args.quality_timeout_s > 0):
         parser.error('Timeouts must be positive')
     try:
         import numpy as np
@@ -255,12 +309,16 @@ def main():
     ctx = mp.get_context('spawn')
     slots = {s: new_slot(ctx, args.panel_width, args.panel_height) for s in args.serials}
     zoom = ctx.Value('i', 0)
-    start_gate, capture_gate, stop = ctx.Event(), ctx.Event(), ctx.Event()
+    start_gate, freeze_gate, capture_gate, stop = (
+        ctx.Event(), ctx.Event(), ctx.Event(), ctx.Event()
+    )
     capture_at = ctx.Value('d', float('inf'))
     messages = ctx.Queue()
     workers = {}
     ready = {}
     saved = {}
+    brightness_latest = {}
+    locked_reports = {}
     reports = {}
     errors = []
     setup_deadline = time.perf_counter() + args.setup_timeout_s
@@ -268,6 +326,11 @@ def main():
     countdown_started = None
     request_at = None
     requested_utc = None
+    quality_stable_since = None
+    quality_timeout_at = None
+    frozen_since = None
+    cancelled = False
+    quality_diagnostics = []
     window = 'AnthroPrecis - Countdown Aufnahme'
     window_created = False
 
@@ -278,13 +341,16 @@ def main():
             ready[serial] = message['report']
             data = ready[serial]
             print(f"Ready: {serial} {data['width']}x{data['height']} {data['pixel_format']}", flush=True)
+        elif kind == 'brightness':
+            brightness_latest[serial] = message['report']
+        elif kind == 'locked':
+            locked_reports[serial] = message['report']
         elif kind == 'saved':
             saved[serial] = message['report']
-            print(f"Saved: {serial} frame {saved[serial]['frame_id']}", flush=True)
         elif kind == 'done':
             reports[serial] = message['report']
-            for error in reports[serial]['errors']:
-                print(f'{serial}: {error}', flush=True)
+            # Errors go to capture.json; show the user only a failure that
+            # actually prevents a measurement.
 
     try:
         cv.namedWindow(window, cv.WINDOW_NORMAL)
@@ -293,7 +359,7 @@ def main():
         for serial in args.serials:
             worker = ctx.Process(target=camera_worker,
                                  args=(serial, options, slots[serial], zoom,
-                                       start_gate, capture_gate, capture_at,
+                                       start_gate, freeze_gate, capture_gate, capture_at,
                                        stop, messages, str(run)))
             worker.start()
             workers[serial] = worker
@@ -320,13 +386,55 @@ def main():
                 print(f'Starting {args.countdown_seconds}-second countdown.')
             if countdown_started is not None and request_at is None:
                 if now - countdown_started >= args.countdown_seconds:
-                    # Common request; cameras remain free-running, not hardware synchronized.
-                    with capture_at.get_lock():
-                        capture_at.value = time.perf_counter()
-                    request_at = capture_at.value
-                    requested_utc = utc_now()
-                    capture_gate.set()
-                    print('PHOTO request sent to both cameras.')
+                    if quality_timeout_at is None:
+                        quality_timeout_at = now + args.quality_timeout_s
+                    if now >= quality_timeout_at:
+                        diagnostic = []
+                        for sn in args.serials:
+                            value = brightness_latest.get(sn, {}).get('metric')
+                            diagnostic.append(f'{sn}: {value!r}')
+                        quality_diagnostics = diagnostic
+                        raise RuntimeError('Automatischer Helligkeitsabgleich konnte keine '
+                                           'ausreichende Bildqualitaet herstellen')
+                    readings = {
+                        sn: brightness_latest[sn]['metric']
+                        for sn in args.serials
+                        if sn in brightness_latest and
+                        now - brightness_latest[sn]['host_perf_s'] <= .8 and
+                        now - brightness_latest[sn]['last_change_perf_s'] >= .6
+                    }
+                    okay, _ = evaluate_pair(readings)
+                    if not freeze_gate.is_set():
+                        if okay:
+                            if quality_stable_since is None:
+                                quality_stable_since = now
+                            elif now - quality_stable_since >= .7:
+                                # No exposure/gain writes after freezing.
+                                freeze_gate.set()
+                                frozen_since = now
+                                locked_reports.clear()
+                        else:
+                            quality_stable_since = None
+                    elif len(locked_reports) == 2:
+                        final = {sn: locked_reports[sn]['metric']
+                                 for sn in args.serials}
+                        okay_frozen, reasons = evaluate_pair(final)
+                        if okay_frozen:
+                            with capture_at.get_lock():
+                                capture_at.value = time.perf_counter()
+                            request_at = capture_at.value
+                            requested_utc = utc_now()
+                            capture_gate.set()
+                            print('Bildqualitaet bestaetigt. Foto wird aufgenommen.',
+                                  flush=True)
+                        else:
+                            # Lighting changed while freezing; retry quietly.
+                            quality_diagnostics = reasons
+                            freeze_gate.clear()
+                            locked_reports.clear()
+                            quality_stable_since = None
+                    elif frozen_since is not None and now - frozen_since > 3:
+                        raise RuntimeError('Kameras konnten die Belichtung nicht fixieren')
             if request_at is not None:
                 if len(saved) == 2:
                     break
@@ -337,8 +445,12 @@ def main():
             if request_at is not None:
                 status = 'Aufnahme laeuft - Bilder speichern...'
             elif countdown_started is not None:
-                remaining = max(1, math.ceil(args.countdown_seconds - (now - countdown_started)))
-                status = f'FOTO IN {remaining} ...'
+                elapsed = now - countdown_started
+                if elapsed < args.countdown_seconds:
+                    remaining = max(1, math.ceil(args.countdown_seconds - elapsed))
+                    status = f'FOTO IN {remaining} ...'
+                else:
+                    status = 'Automatischer Helligkeitsabgleich - bitte warten ...'
             else:
                 status = 'LEERTASTE: Countdown + Foto | Z: Zoom | ESC/Q: Abbrechen'
             cv.putText(canvas, status, (12, args.panel_height + 145),
@@ -346,7 +458,8 @@ def main():
             cv.imshow(window, canvas)
             key = cv.waitKey(20) & 0xFF
             if key in (27, ord('q'), ord('Q')):
-                print('Cancelled before capture.')
+                cancelled = True
+                print('Aufnahme abgebrochen.')
                 break
             if key == ord(' ') and ready_for_countdown and countdown_started is None:
                 countdown_started = time.perf_counter()
@@ -359,7 +472,8 @@ def main():
             except cv.error:
                 break
     except KeyboardInterrupt:
-        errors.append('Interrupted')
+        cancelled = True
+        print('Aufnahme abgebrochen.')
     except Exception as exc:
         errors.append(f'{type(exc).__name__}: {exc}')
     finally:
@@ -403,6 +517,13 @@ def main():
         'started_utc': requested_utc, 'finished_utc': utc_now(),
         'request_host_perf_s': request_at, 'serials': args.serials,
         'frames': saved, 'cameras': reports, 'errors': errors,
+        'cancelled': cancelled, 'quality_diagnostics': quality_diagnostics,
+        'auto_brightness_preflight': {
+            'enabled': True, 'target_gray_8bit': 105,
+            'tolerance_fraction': 0.05, 'pair_tolerance_fraction': 0.05,
+            'final_frozen_metrics': locked_reports,
+            'quality_timeout_seconds': args.quality_timeout_s,
+        },
         'host_frame_receive_gap_ms': host_skew_ms,
         'host_gap_is_not_exposure_offset': True,
         'hardware_synchronized': False, 'software_request_after_countdown': True,
@@ -410,9 +531,13 @@ def main():
     }
     with (run / f'{run_id}_capture.json').open('x', encoding='utf-8') as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-    print(f'Output directory: {run}')
-    return 0 if result['passed'] else 1
+    if result['passed']:
+        print(f'Aufnahme erfolgreich: 2 Bilder und Protokoll in {run}')
+    elif not cancelled:
+        detail = errors[0] if errors else 'Nicht alle Kameras konnten gueltige Bilder liefern.'
+        print(f'Messung nicht moeglich: {detail}')
+        print(f'Diagnoseprotokoll: {run / (run_id + "_capture.json")}')
+    return 0 if result['passed'] or cancelled else 1
 
 
 if __name__ == '__main__':
