@@ -119,7 +119,7 @@ class AutoBrightness:
         self.last_metric = metric
         gray = max(1.0, float(metric["gray"]))
         error = TARGET_GRAY_8BIT / gray
-        if .93 <= error <= 1.07:
+        if .97 <= error <= 1.03:
             return
         # Limit each adjustment to minimize flicker and runaway oscillations.
         scale = min(1.35, max(.75, error))
