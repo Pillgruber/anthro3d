@@ -323,6 +323,7 @@ def main():
     locked_reports = {}
     reports = {}
     errors = []
+    diagnostics = []
     setup_deadline = time.perf_counter() + args.setup_timeout_s
     started = False
     countdown_started = None
@@ -342,7 +343,7 @@ def main():
         if kind == 'ready':
             ready[serial] = message['report']
             data = ready[serial]
-            print(f"Ready: {serial} {data['width']}x{data['height']} {data['pixel_format']}", flush=True)
+            # Successful camera initialization needs no technical UI message.
         elif kind == 'brightness':
             brightness_latest[serial] = message['report']
         elif kind == 'locked':
@@ -365,7 +366,7 @@ def main():
                                        stop, messages, str(run)))
             worker.start()
             workers[serial] = worker
-        print('Both cameras warming up. SPACE: countdown/photo; Z: zoom; ESC/Q: cancel.')
+        print('Kameras werden vorbereitet ...')
         while not stop.is_set():
             while True:
                 try:
@@ -377,7 +378,7 @@ def main():
                 if len(ready) == 2:
                     started = True
                     start_gate.set()
-                    print('Live preview running; press SPACE when ready.')
+                    print('Bereit: LEERTASTE fuer 3-Sekunden-Countdown; Z: Zoom; ESC: Abbrechen.')
                 elif now > setup_deadline:
                     raise RuntimeError('Camera setup timeout')
             if any(worker.exitcode is not None and s not in saved for s, worker in workers.items()):
@@ -506,7 +507,7 @@ def main():
             try:
                 cv.destroyAllWindows()
             except Exception as exc:
-                errors.append(f'Window cleanup failed: {exc}')
+                diagnostics.append(f'Window cleanup failed: {exc}')
     for serial in args.serials:
         if serial not in saved:
             errors.append(f'No saved image for camera {serial}')
@@ -522,6 +523,7 @@ def main():
         'request_host_perf_s': request_at, 'serials': args.serials,
         'frames': saved, 'cameras': reports, 'errors': errors,
         'cancelled': cancelled, 'quality_diagnostics': quality_diagnostics,
+        'diagnostics': diagnostics,
         'auto_brightness_preflight': {
             'enabled': True, 'target_gray_8bit': 105,
             'tolerance_fraction': 0.05, 'pair_tolerance_fraction': 0.05,
@@ -545,8 +547,19 @@ def main():
         ]
         detail = (worker_failures[0] if worker_failures else
                   (errors[0] if errors else 'Keine gueltige Doppelaufnahme moeglich.'))
-        print(f'Messung nicht moeglich: {detail}')
-        print(f'Diagnoseprotokoll: {run / (run_id + "_capture.json")}')
+        if ('serial' in detail and ('found 0' in detail or
+                                    'found 0' in detail.lower())):
+            message = ('Mindestens eine Kamera wurde nicht erkannt. '
+                       'USB-Verbindung pruefen und Galaxy Viewer schliessen.')
+        elif 'Helligkeitsabgleich' in detail or 'Bildqualitaet' in detail:
+            message = ('Die Bildqualitaet konnte trotz automatischer '
+                       'Anpassung nicht ausreichend angeglichen werden.')
+        elif 'camera' in detail.lower() or 'kamera' in detail.lower():
+            message = 'Mindestens eine Kamera konnte kein gueltiges Bild liefern.'
+        else:
+            message = 'Die Aufnahme konnte nicht abgeschlossen werden.'
+        print(f'Messung nicht moeglich: {message}')
+        print(f'Details: {run / (run_id + "_capture.json")}')
     return 0 if result['passed'] or cancelled else 1
 
 
