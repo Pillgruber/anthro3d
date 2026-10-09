@@ -59,6 +59,7 @@ def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
     streaming = False
     restore = []
     errors = []
+    diagnostics = []
     report = {'serial': serial, 'valid_frames': 0, 'preview_updates': 0,
               'missing_frame_ids': 0, 'frame_id_anomaly_count': 0}
     previous_id = None
@@ -233,22 +234,23 @@ def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
                 try:
                     camera.stream_off()
                 except Exception as exc:
-                    errors.append(f'Stopping acquisition failed: {exc}')
+                    diagnostics.append(f'Stopping acquisition failed: {exc}')
             if brightness is not None:
-                errors.extend(f'Restoring auto brightness setting failed: {error}'
-                              for error in brightness.restore_settings())
+                diagnostics.extend(f'Restoring auto brightness setting failed: {error}'
+                                   for error in brightness.restore_settings())
             for feature, previous in reversed(restore):
                 try:
                     feature.set(previous)
                 except Exception as exc:
-                    errors.append(f'Restoring acquisition setting failed: {exc}')
+                    diagnostics.append(f'Restoring acquisition setting failed: {exc}')
             try:
                 camera.close_device()
             except Exception as exc:
-                errors.append(f'Closing camera failed: {exc}')
+                diagnostics.append(f'Closing camera failed: {exc}')
         if report['frame_id_anomaly_count']:
-            errors.append('Frame-ID gaps, duplicates, or reversed IDs seen during run')
-        report.update(saved=snapshot is not None, snapshot=snapshot, errors=errors,
+            diagnostics.append('Frame-ID gaps, duplicates, or reversed IDs seen during run')
+        report.update(saved=snapshot is not None, snapshot=snapshot,
+                      errors=errors, diagnostics=diagnostics,
                       auto_brightness_adjustments=brightness.changes if brightness else None,
                       passed=snapshot is not None and not errors)
         if errors:
