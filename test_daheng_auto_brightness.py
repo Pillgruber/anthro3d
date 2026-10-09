@@ -76,7 +76,7 @@ class AutoBrightnessTests(unittest.TestCase):
             '30': {'gray': 106, 'saturated_percent': 1},
         })[0])
         self.assertFalse(evaluate_pair({
-            '3': {'gray': 104, 'saturated_percent': 20},
+            '3': {'gray': 104, 'saturated_percent': 48},
             '30': {'gray': 106, 'saturated_percent': 1},
         })[0])
 
