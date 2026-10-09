@@ -26,6 +26,22 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def desktop_output_dir():
+    """Resolve the actual Windows Desktop (also when redirected to OneDrive)."""
+    if sys.platform == 'win32':
+        try:
+            import winreg
+            registry_path = (
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+            )
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
+                desktop_path, _ = winreg.QueryValueEx(key, "Desktop")
+            return Path(os.path.expandvars(desktop_path)) / "AnthroPrecis-Aufnahmen"
+        except (OSError, ValueError):
+            pass
+    return Path.home() / "Desktop" / "AnthroPrecis-Aufnahmen"
+
+
 def optional_float(control, name):
     try:
         return float(control.get_float_feature(name).get())
@@ -125,7 +141,7 @@ def camera_worker(serial, options, slot, zoom, start_gate, capture_gate,
                         # Copy before returning SDK-owned frame; 16-bit data stay 16-bit.
                         owned = array.copy()
                         frame_info = {
-                            'serial': serial, 'filename': f'camera_{serial}.png',
+                            'serial': serial, 'filename': f"{options['run_id']}_camera_{serial}.png",
                             'frame_id': frame_id,
                             'camera_timestamp_raw': int(frame.timestamp),
                             'host_received_perf_s': received,
@@ -193,6 +209,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serials', nargs=2, required=True)
     parser.add_argument('--countdown-seconds', type=int, default=5)
+    parser.add_argument('--output-dir', type=Path, default=None,
+                        help='Flat output folder (default: Desktop/AnthroPrecis-Aufnahmen)')
     parser.add_argument('--auto', action='store_true',
                         help='Start countdown automatically once both previews have images')
     parser.add_argument('--panel-width', type=int, default=640)
@@ -226,11 +244,13 @@ def main():
     except (ImportError, RuntimeError) as exc:
         print(f'Dependencies not ready: {exc}; install requirements-daheng-preview.txt')
         return 1
-    output = Path(__file__).resolve().parent / 'daheng_test_results'
-    output.mkdir(exist_ok=True)
-    run = output / ('snapshot_' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ'))
-    run.mkdir()
+    # Every capture goes directly into one Desktop folder, without subfolders.
+    # Local timestamp prefixes make sorting by filename (descending) chronological.
+    run = (args.output_dir if args.output_dir else desktop_output_dir()).expanduser()
+    run.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S_%f')
     options = vars(args).copy()
+    options['run_id'] = run_id
     options['sdk_python'] = str(args.sdk_python.resolve())
     ctx = mp.get_context('spawn')
     slots = {s: new_slot(ctx, args.panel_width, args.panel_height) for s in args.serials}
@@ -379,6 +399,7 @@ def main():
         host_skew_ms = abs(saved[args.serials[0]]['host_received_perf_s'] -
                            saved[args.serials[1]]['host_received_perf_s']) * 1000
     result = {
+        'capture_id': run_id, 'output_dir': str(run),
         'started_utc': requested_utc, 'finished_utc': utc_now(),
         'request_host_perf_s': request_at, 'serials': args.serials,
         'frames': saved, 'cameras': reports, 'errors': errors,
@@ -387,7 +408,7 @@ def main():
         'hardware_synchronized': False, 'software_request_after_countdown': True,
         'passed': not errors and len(saved) == 2,
     }
-    with (run / 'capture.json').open('x', encoding='utf-8') as f:
+    with (run / f'{run_id}_capture.json').open('x', encoding='utf-8') as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     print(f'Output directory: {run}')
