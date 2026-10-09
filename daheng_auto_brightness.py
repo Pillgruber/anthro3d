@@ -14,7 +14,7 @@ import time
 TARGET_GRAY_8BIT = 105.0
 EXPOSURE_LIMIT_US = 8000.0
 GAIN_LIMIT_DB = 8.0
-UPDATE_INTERVAL_S = 0.25
+UPDATE_INTERVAL_S = 0.15
 BRIGHTNESS_TOLERANCE = 0.05
 PAIR_TOLERANCE = 0.05
 MAX_SATURATED_PERCENT = 40.0
@@ -49,8 +49,15 @@ def brightness_metric(frame, pixel_format, np):
         value = 245.0
     else:
         value = float(np.percentile(unsaturated, 55))
-    return {"gray": value,
-            "saturated_percent": round(100.0 * float(np.mean(samples >= 245)), 2)}
+    return {
+        "gray": value,
+        "saturated_percent": round(100.0 * float(np.mean(samples >= 245)), 2),
+        "dark_percent": round(100.0 * float(np.mean(samples <= 12)), 2),
+        "midtone_percent": round(100.0 * float(np.mean(
+            (samples >= 20) & (samples <= 235))), 2),
+        "p10": float(np.percentile(samples, 10)),
+        "p90": float(np.percentile(samples, 90)),
+    }
 
 
 def _range(feature, low, high):
@@ -122,7 +129,7 @@ class AutoBrightness:
         if .97 <= error <= 1.03:
             return
         # Limit each adjustment to minimize flicker and runaway oscillations.
-        scale = min(1.35, max(.75, error))
+        scale = min(1.60, max(.65, error))
         exposure = float(self.exposure.get())
         gain = float(self.gain.get())
         exp_min, exp_max = self.exposure_bounds
@@ -201,4 +208,33 @@ def evaluate_pair(metrics):
             readings.append(gray)
     if len(readings) == 2 and abs(readings[0] - readings[1]) > PAIR_TOLERANCE * TARGET_GRAY_8BIT:
         reasons.append("The cameras' measured ROI brightness differs by more than 5%")
+    return not reasons, reasons
+
+def evaluate_capture_quality(metrics):
+    """Heuristic acquisition sanity check, NOT a calibrated human-body quality test.
+
+    We deliberately do not require equal brightness: under strong backlight,
+    the common target may be physically impossible with fixed apertures. The
+    camera may capture if both streams retain some measurable grayscale detail.
+    """
+    if len(metrics) != 2:
+        return False, ["Nicht beide Kameras haben Bildqualitaetswerte geliefert"]
+    reasons = []
+    for serial, metric in metrics.items():
+        if not isinstance(metric, dict):
+            reasons.append(f"{serial}: keine Bilddaten")
+            continue
+        try:
+            mid = float(metric["midtone_percent"])
+            saturated = float(metric["saturated_percent"])
+            gray = float(metric["gray"])
+            dark = float(metric["dark_percent"])
+            p90 = float(metric["p90"])
+        except (KeyError, TypeError, ValueError):
+            reasons.append(f"{serial}: unvollstaendige Bildqualitaetsdaten")
+            continue
+        if not all(math.isfinite(x) for x in (mid, saturated, gray, dark, p90)):
+            reasons.append(f"{serial}: ungueltige Bildhelligkeit")
+        elif saturated > 97 or dark > 97 or mid < 1.0 or p90 < 20:
+            reasons.append(f"{serial}: nahezu vollstaendig dunkel oder ueberbelichtet")
     return not reasons, reasons
