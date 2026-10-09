@@ -12,7 +12,7 @@ git pull --ff-only
 
 Kamerasystem 1: Kamera-ID 3 (FHK26060051) und Kamera-ID 30 (FHK26080099).
 
-Leertaste: Countdown von 5 Sekunden und Aufnahme. Z: 1:1-Ansicht. ESC/Q: Abbrechen.
+Leertaste: Countdown von 3 Sekunden und Aufnahme. Z: 1:1-Ansicht. ESC/Q: Abbrechen.
 Optional: `--countdown-seconds 3` oder `--auto`.
 
 ## Speicherort – ein Ordner direkt am Desktop
@@ -39,7 +39,31 @@ als 16-Bit-PNG. Die JSON-Datei hält Frame-IDs, Zeitstempel, Kameraeinstellungen
 und eventuelle Fehler fest.
 
 Die beiden Kameras laufen frei; ihre Belichtungszeitpunkte sind nicht
-hardware-synchronisiert. Host-Empfangszeitdifferenzen sind keine gemessenen
-Belichtungszeitdifferenzen. Belichtung, Gain, Bildgröße und Kamera-FPS
-werden nicht aktiv verändert. Die neue Countdown-Funktion muss noch
-auf der tatsächlichen Hardware getestet werden.
+hardware-synchronisiert. Host-Empfangszeitdifferenzen sind keine gemessenen Belichtungszeitdifferenzen.
+
+## Automatischer Helligkeitsabgleich vor dem Foto
+
+Mit Betätigung der Leertaste beginnt der 3-Sekunden-Countdown. Währenddessen
+passen beide Kameras **automatisch und individuell** ihre physische Belichtungszeit
+und bei Bedarf Gain an denselben Zielhelligkeitswert (105 / 255) an.
+Die aktuelle erste Version bewertet einen mittleren Bildbereich
+(60 % Bildbreite, 70 % Bildhöhe), blendet sehr helle Pixel bei der
+Messwertberechnung weitgehend aus und prüft auch den überbelichteten Anteil.
+Später ersetzen wir diese Näherung durch eine Körpermasken-basierte Regelung.
+
+Die beiden Messwerte müssen jeweils höchstens 5 % vom gemeinsamen Sollwert
+abweichen und dürfen sich um höchstens 5 % unterscheiden.
+Die automatische Regelung wartet auf stabile Messwerte und fixiert dann
+Belichtung und Gain für die Aufnahme. Nötigenfalls läuft der stille
+Abgleich nach dem Countdown noch maximal 18 Sekunden weiter.
+**Eine Fehlermeldung erscheint nur, wenn keine gültige Aufnahme möglich ist.**
+Technische Auffälligkeiten, die die Messung nicht blockieren, werden nur
+im JSON-Protokoll gespeichert.
+
+Die Regelung beschränkt die Belichtungszeit vorerst auf max. 8 ms und Gain
+auf 8 dB, um hohe Bildraten und geringes Rauschen zu priorisieren.
+Der exakte Belichtungsabgleich ist derzeit ein erster Entwicklungsstand:
+Messgenauigkeit, reale Kamerabedingungen und Pixelmasken müssen noch
+auf dem Windows-PC validiert werden. Er ersetzt nicht die geometrische
+Kamerakalibrierung oder eine echte Belichtungssynchronisation.
+
