@@ -8,12 +8,16 @@ they cannot restore clipped detail or guarantee identical appearance.
 
 import math
 import re
+import time
 
 
 TARGET_GRAY_8BIT = 105.0
 EXPOSURE_LIMIT_US = 8000.0
 GAIN_LIMIT_DB = 8.0
 UPDATE_INTERVAL_S = 0.25
+BRIGHTNESS_TOLERANCE = 0.05
+PAIR_TOLERANCE = 0.05
+MAX_SATURATED_PERCENT = 12.0
 
 
 def brightness_metric(frame, pixel_format, np):
@@ -69,6 +73,7 @@ class AutoBrightness:
         self.exposure = None
         self.gain = None
         self.last_update = 0.0
+        self.last_change = time.perf_counter()
         self.changes = 0
         self.last_metric = None
         self.exposure_bounds = None
@@ -128,20 +133,24 @@ class AutoBrightness:
                 if abs(new_exposure - exposure) >= 1:
                     self.exposure.set(new_exposure)
                     self.changes += 1
+                    self.last_change = now
             elif gain < gain_max - .05:
                 new_gain = min(gain_max, gain + 20 * math.log10(scale))
                 self.gain.set(new_gain)
                 self.changes += 1
+                    self.last_change = now
         else:
             if gain > gain_min + .05:
                 new_gain = max(gain_min, gain + 20 * math.log10(scale))
                 self.gain.set(new_gain)
                 self.changes += 1
+                    self.last_change = now
             elif exposure > exp_min * 1.02:
                 new_exposure = max(exp_min, min(exp_max, exposure * scale))
                 if abs(new_exposure - exposure) >= 1:
                     self.exposure.set(new_exposure)
                     self.changes += 1
+                    self.last_change = now
 
     def state(self):
         return {
@@ -153,6 +162,7 @@ class AutoBrightness:
             "exposure_limit_us": self.exposure_bounds[1],
             "gain_limit_db": self.gain_bounds[1],
             "adjustment_count": self.changes,
+            "last_change_perf_s": self.last_change,
             "last_metric": self.last_metric,
         }
 
@@ -165,3 +175,30 @@ class AutoBrightness:
                 errors.append(str(exc))
         self.restore.clear()
         return errors
+
+
+def evaluate_pair(metrics):
+    """Return (accepted, reasons) for the same target across two cameras.
+
+    These checks do not validate geometry, focus, stereo sync, or the subject
+    itself. They only apply to the provisional center-region brightness metric.
+    """
+    reasons = []
+    if len(metrics) != 2:
+        return False, ["Both cameras must report a brightness measurement"]
+    readings = []
+    for serial, measure in metrics.items():
+        if not isinstance(measure, dict):
+            reasons.append(f"{serial}: missing brightness measurement")
+            continue
+        gray = float(measure.get("gray", float("nan")))
+        clipped = float(measure.get("saturated_percent", float("nan")))
+        if not math.isfinite(gray) or abs(gray - TARGET_GRAY_8BIT) > BRIGHTNESS_TOLERANCE * TARGET_GRAY_8BIT:
+            reasons.append(f"{serial}: gray {gray:.1f} outside ±5% of {TARGET_GRAY_8BIT:g}")
+        if not math.isfinite(clipped) or clipped > MAX_SATURATED_PERCENT:
+            reasons.append(f"{serial}: saturated ROI {clipped:.1f}% exceeds {MAX_SATURATED_PERCENT:g}%")
+        if math.isfinite(gray):
+            readings.append(gray)
+    if len(readings) == 2 and abs(readings[0] - readings[1]) > PAIR_TOLERANCE * TARGET_GRAY_8BIT:
+        reasons.append("The cameras' measured ROI brightness differs by more than 5%")
+    return not reasons, reasons
