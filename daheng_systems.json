@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "description": "ANTHRO3D / AnthroPrecis logical camera assignment; camera IDs are distinct from ArUco marker IDs.",
+  "systems": {
+    "1": {
+      "name": "Kamerasystem 1",
+      "type": "daheng_stereo_pair",
+      "calibration_status": "pending",
+      "cameras": [
+        {
+          "id": 3,
+          "serial": "FHK26060051",
+          "model": "MER2-240-159U3M"
+        },
+        {
+          "id": 30,
+          "serial": "FHK26080099",
+          "model": "MER2-240-159U3M"
+        }
+      ]
+    }
+  }
+}
