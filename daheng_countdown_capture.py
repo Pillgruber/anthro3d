@@ -7,6 +7,7 @@ This is NOT exposure-synchronized stereo acquisition.
 """
 
 import argparse
+from collections import deque
 from datetime import datetime, timezone
 import json
 import math
@@ -21,7 +22,7 @@ import time
 
 from daheng_live_preview import make_panel, new_slot, render_window
 from daheng_auto_brightness import (
-    AutoBrightness, brightness_metric, evaluate_pair,
+    AutoBrightness, brightness_metric, evaluate_pair, evaluate_capture_quality,
 )
 
 
@@ -63,11 +64,13 @@ def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
     report = {'serial': serial, 'valid_frames': 0, 'preview_updates': 0,
               'missing_frame_ids': 0, 'frame_id_anomaly_count': 0}
     previous_id = None
+    arrival_times = deque(maxlen=120)
     next_preview = 0.0
     snapshot = None
     brightness = None
     locked = False
     lock_announced = False
+    lock_frames = 0
     last_quality = None
     try:
         import numpy as np
@@ -138,17 +141,26 @@ def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
                     report['missing_frame_ids'] += max(0, frame_id - previous_id - 1)
                 previous_id = frame_id
                 report['valid_frames'] += 1
+                arrival_times.append(received)
+                rx_fps = ((len(arrival_times) - 1) /
+                          (arrival_times[-1] - arrival_times[0])
+                          if len(arrival_times) > 1 and
+                          arrival_times[-1] > arrival_times[0] else 0.0)
                 if locked and not freeze_gate.is_set():
                     locked = False
                     lock_announced = False
+                    lock_frames = 0
                     brightness.last_update = 0.0  # Resume adjusting after failed lock
                 if not locked and freeze_gate.is_set():
                     locked = True
+                    lock_frames = 0
+                if locked:
+                    lock_frames += 1
                 need_capture = capture_gate.is_set() and received >= capture_at.value
                 need_preview = received >= next_preview
                 need_quality = (
                     (not locked and brightness.should_sample(received))
-                    or (locked and not lock_announced)
+                    or (locked and not lock_announced and lock_frames >= 2)
                 )
                 if need_capture or need_preview or need_quality:
                     array = image.get_numpy_array()
@@ -210,6 +222,7 @@ def camera_worker(serial, options, slot, zoom, start_gate, freeze_gate,
                         next_preview = received + 1.0 / options['preview_fps']
                 with slot['lock']:
                     slot['valid_frames'].value = report['valid_frames']
+                    slot['arrival_fps'].value = rx_fps
                     slot['frame_id'].value = frame_id
                     slot['last_receive'].value = received
                     slot['anomalies'].value = report['frame_id_anomaly_count']
@@ -262,8 +275,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serials', nargs=2, required=True)
     parser.add_argument('--countdown-seconds', type=int, default=3)
-    parser.add_argument('--quality-timeout-s', type=float, default=18,
-                        help='Maximum time to complete brightness matching after countdown')
+    parser.add_argument('--quality-timeout-s', type=float, default=2.0,
+                        help='Maximum time to confirm frozen camera frames after countdown')
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Flat output folder (default: Desktop/AnthroPrecis-Aufnahmen)')
     parser.add_argument('--auto', action='store_true',
@@ -329,9 +342,8 @@ def main():
     countdown_started = None
     request_at = None
     requested_utc = None
-    quality_stable_since = None
-    quality_timeout_at = None
     frozen_since = None
+    quality_assessment = None
     cancelled = False
     quality_diagnostics = []
     window = 'AnthroPrecis - Countdown Aufnahme'
@@ -389,55 +401,37 @@ def main():
                 print(f'Starting {args.countdown_seconds}-second countdown.')
             if countdown_started is not None and request_at is None:
                 if now - countdown_started >= args.countdown_seconds:
-                    if quality_timeout_at is None:
-                        quality_timeout_at = now + args.quality_timeout_s
-                    if now >= quality_timeout_at:
-                        diagnostic = []
-                        for sn in args.serials:
-                            value = brightness_latest.get(sn, {}).get('metric')
-                            diagnostic.append(f'{sn}: {value!r}')
-                        quality_diagnostics = diagnostic
-                        raise RuntimeError('Automatischer Helligkeitsabgleich konnte keine '
-                                           'ausreichende Bildqualitaet herstellen')
-                    readings = {
-                        sn: brightness_latest[sn]['metric']
-                        for sn in args.serials
-                        if sn in brightness_latest and
-                        now - brightness_latest[sn]['host_perf_s'] <= .8 and
-                        now - brightness_latest[sn]['last_change_perf_s'] >= .6
-                    }
-                    okay, _ = evaluate_pair(readings)
                     if not freeze_gate.is_set():
-                        if okay:
-                            if quality_stable_since is None:
-                                quality_stable_since = now
-                            elif now - quality_stable_since >= .7:
-                                # No exposure/gain writes after freezing.
-                                freeze_gate.set()
-                                frozen_since = now
-                                locked_reports.clear()
-                        else:
-                            quality_stable_since = None
+                        # Regulation has already been running throughout the
+                        # live preview AND the 3-second countdown. Never wait
+                        # for an impossible 5%-matched brightness target.
+                        freeze_gate.set()
+                        frozen_since = now
                     elif len(locked_reports) == 2:
-                        final = {sn: locked_reports[sn]['metric']
-                                 for sn in args.serials}
-                        okay_frozen, reasons = evaluate_pair(final)
-                        if okay_frozen:
-                            with capture_at.get_lock():
-                                capture_at.value = time.perf_counter()
-                            request_at = capture_at.value
-                            requested_utc = utc_now()
-                            capture_gate.set()
-                            print('Bildqualitaet bestaetigt. Foto wird aufgenommen.',
-                                  flush=True)
-                        else:
-                            # Lighting changed while freezing; retry quietly.
+                        frozen_metrics = {
+                            sn: locked_reports[sn]['metric'] for sn in args.serials
+                        }
+                        acceptable, reasons = evaluate_capture_quality(frozen_metrics)
+                        matched, mismatch_reasons = evaluate_pair(frozen_metrics)
+                        quality_assessment = {
+                            'usable': acceptable,
+                            'common_target_matched': matched,
+                            'target_mismatch_reasons': mismatch_reasons,
+                            'capture_block_reasons': reasons,
+                            'frozen_metrics': frozen_metrics,
+                            'checked_host_perf_s': now,
+                        }
+                        if not acceptable:
                             quality_diagnostics = reasons
-                            freeze_gate.clear()
-                            locked_reports.clear()
-                            quality_stable_since = None
-                    elif frozen_since is not None and now - frozen_since > 3:
-                        raise RuntimeError('Kameras konnten die Belichtung nicht fixieren')
+                            raise RuntimeError('Bildqualitaet fuer die Messung unzureichend')
+                        with capture_at.get_lock():
+                            capture_at.value = time.perf_counter()
+                        request_at = capture_at.value
+                        requested_utc = utc_now()
+                        capture_gate.set()
+                    elif now - frozen_since >= args.quality_timeout_s:
+                        raise RuntimeError('Kameras haben keine aktuellen Bilder nach '
+                                           'dem Countdown geliefert')
             if request_at is not None:
                 if len(saved) == 2:
                     break
@@ -451,9 +445,9 @@ def main():
                 elapsed = now - countdown_started
                 if elapsed < args.countdown_seconds:
                     remaining = max(1, math.ceil(args.countdown_seconds - elapsed))
-                    status = f'FOTO IN {remaining} ...'
+                    status = f'FOTO IN {remaining} ... | Belichtung automatisch'
                 else:
-                    status = 'Automatischer Helligkeitsabgleich - bitte warten ...'
+                    status = 'Aufnahme wird gestartet ...'
             else:
                 status = 'LEERTASTE: Countdown + Foto | Z: Zoom | ESC/Q: Abbrechen'
             cv.putText(canvas, status, (12, args.panel_height + 145),
@@ -527,8 +521,10 @@ def main():
         'auto_brightness_preflight': {
             'enabled': True, 'target_gray_8bit': 105,
             'tolerance_fraction': 0.05, 'pair_tolerance_fraction': 0.05,
+            'match_is_informational_not_blocking': True,
             'final_frozen_metrics': locked_reports,
-            'quality_timeout_seconds': args.quality_timeout_s,
+            'assessment': quality_assessment,
+            'post_countdown_camera_timeout_seconds': args.quality_timeout_s,
         },
         'host_frame_receive_gap_ms': host_skew_ms,
         'host_gap_is_not_exposure_offset': True,
@@ -551,9 +547,9 @@ def main():
                                     'found 0' in detail.lower())):
             message = ('Mindestens eine Kamera wurde nicht erkannt. '
                        'USB-Verbindung pruefen und Galaxy Viewer schliessen.')
-        elif 'Helligkeitsabgleich' in detail or 'Bildqualitaet' in detail:
-            message = ('Die Bildqualitaet konnte trotz automatischer '
-                       'Anpassung nicht ausreichend angeglichen werden.')
+        elif 'Bildqualitaet' in detail or 'Bilddaten' in detail:
+            message = ('Die Bilddaten sind trotz automatischer Belichtung '
+                       'zu dunkel oder zu hell fuer eine verlaessliche Messung.')
         elif 'camera' in detail.lower() or 'kamera' in detail.lower():
             message = 'Mindestens eine Kamera konnte kein gueltiges Bild liefern.'
         else:
