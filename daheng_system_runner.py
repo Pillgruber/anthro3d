@@ -6,7 +6,8 @@ Examples:
   python daheng_system_runner.py --system 1 --mode capture --countdown-seconds 3
 
 Camera IDs are logical software identifiers, not ArUco board/marker IDs.
-This program deliberately does not change camera exposure, focus, or calibration.
+The preview does not adjust exposure; capture automatically adjusts and locks
+physical exposure/gain before the photo. Focus and geometry are unchanged.
 """
 
 import argparse
