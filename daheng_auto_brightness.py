@@ -138,13 +138,13 @@ class AutoBrightness:
                 new_gain = min(gain_max, gain + 20 * math.log10(scale))
                 self.gain.set(new_gain)
                 self.changes += 1
-                    self.last_change = now
+                self.last_change = now
         else:
             if gain > gain_min + .05:
                 new_gain = max(gain_min, gain + 20 * math.log10(scale))
                 self.gain.set(new_gain)
                 self.changes += 1
-                    self.last_change = now
+                self.last_change = now
             elif exposure > exp_min * 1.02:
                 new_exposure = max(exp_min, min(exp_max, exposure * scale))
                 if abs(new_exposure - exposure) >= 1:
