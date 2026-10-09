@@ -470,8 +470,10 @@ def main():
                 zoom.value = 1 - zoom.value
             try:
                 if cv.getWindowProperty(window, cv.WND_PROP_VISIBLE) < 1:
+                    cancelled = True
                     break
             except cv.error:
+                cancelled = True
                 break
     except KeyboardInterrupt:
         cancelled = True
